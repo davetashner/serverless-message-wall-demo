@@ -1,0 +1,100 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-aws-resource-tags
+  annotations:
+    policies.kyverno.io/title: Require Tags on AWS Resources
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Validates that all AWS managed resources have required tags (createdBy,
+      managedBy, environment). This policy acts as a safety net for the mutation
+      policy - if mutation is bypassed, resources will be rejected.
+      See ADR-007 for details.
+spec:
+  # Enforce mode: reject non-compliant resources
+  validationFailureAction: Enforce
+
+  # Apply to existing resources during background scans
+  background: true
+
+  rules:
+    # S3 Buckets
+    - name: require-tags-s3-bucket
+      match:
+        any:
+          - resources:
+              kinds:
+                - s3.aws.upbound.io/*/Bucket
+      validate:
+        message: >-
+          S3 Bucket must have required tags: createdBy=crossplane, managedBy, and environment.
+          These tags are normally added automatically by the mutation policy.
+          If you see this error, the mutation policy may not be working correctly.
+        pattern:
+          spec:
+            forProvider:
+              tags:
+                createdBy: "crossplane"
+                managedBy: "?*"
+                environment: "?*"
+
+    # DynamoDB Tables
+    - name: require-tags-dynamodb-table
+      match:
+        any:
+          - resources:
+              kinds:
+                - dynamodb.aws.upbound.io/*/Table
+      validate:
+        message: >-
+          DynamoDB Table must have required tags: createdBy=crossplane, managedBy, and environment.
+          These tags are normally added automatically by the mutation policy.
+          If you see this error, the mutation policy may not be working correctly.
+        pattern:
+          spec:
+            forProvider:
+              tags:
+                createdBy: "crossplane"
+                managedBy: "?*"
+                environment: "?*"
+
+    # Lambda Functions
+    - name: require-tags-lambda-function
+      match:
+        any:
+          - resources:
+              kinds:
+                - lambda.aws.upbound.io/*/Function
+      validate:
+        message: >-
+          Lambda Function must have required tags: createdBy=crossplane, managedBy, and environment.
+          These tags are normally added automatically by the mutation policy.
+          If you see this error, the mutation policy may not be working correctly.
+        pattern:
+          spec:
+            forProvider:
+              tags:
+                createdBy: "crossplane"
+                managedBy: "?*"
+                environment: "?*"
+
+    # CloudWatch Events / EventBridge Rules
+    - name: require-tags-eventbridge-rule
+      match:
+        any:
+          - resources:
+              kinds:
+                - cloudwatchevents.aws.upbound.io/v1beta1/Rule
+      validate:
+        message: >-
+          EventBridge Rule must have required tags: createdBy=crossplane, managedBy, and environment.
+          These tags are normally added automatically by the mutation policy.
+          If you see this error, the mutation policy may not be working correctly.
+        pattern:
+          spec:
+            forProvider:
+              tags:
+                createdBy: "crossplane"
+                managedBy: "?*"
+                environment: "?*"

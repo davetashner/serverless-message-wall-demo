@@ -1,0 +1,30 @@
+# Kyverno Helm values for messagewall-demo actuator cluster
+# See ADR-007 for policy enforcement strategy
+
+# Admission controller configuration
+admissionController:
+  # Fail open: if Kyverno is unavailable, allow requests through
+  # This is appropriate for a demo cluster; production should use "Fail"
+  failurePolicy: Ignore
+
+  replicas: 1  # Single replica for local kind cluster
+
+# Background controller for policy reports
+backgroundController:
+  enabled: true
+  replicas: 1
+
+# Reports controller for PolicyReport resources
+reportsController:
+  enabled: true
+  replicas: 1
+
+# Cleanup controller for cleaning up old reports
+cleanupController:
+  enabled: true
+  replicas: 1
+
+# Enable policy reports for auditability
+features:
+  policyReports:
+    enabled: true

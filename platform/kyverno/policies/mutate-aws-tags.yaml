@@ -1,0 +1,78 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: mutate-aws-resource-tags
+  annotations:
+    policies.kyverno.io/title: Add Required Tags to AWS Resources
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/description: >-
+      Automatically adds required tags (createdBy, managedBy, environment) to all
+      AWS managed resources created via Crossplane. This ensures consistent tagging
+      for cost allocation, cleanup identification, and audit trails.
+      See ADR-007 for details.
+spec:
+  # Mutate resources on CREATE and UPDATE
+  rules:
+    # S3 Buckets (supports v1beta1 and v1beta2)
+    - name: add-tags-s3-bucket
+      match:
+        any:
+          - resources:
+              kinds:
+                - s3.aws.upbound.io/*/Bucket
+      mutate:
+        patchStrategicMerge:
+          spec:
+            forProvider:
+              tags:
+                createdBy: crossplane
+                managedBy: messagewall-demo
+                environment: dev
+
+    # DynamoDB Tables (supports v1beta1 and v1beta2)
+    - name: add-tags-dynamodb-table
+      match:
+        any:
+          - resources:
+              kinds:
+                - dynamodb.aws.upbound.io/*/Table
+      mutate:
+        patchStrategicMerge:
+          spec:
+            forProvider:
+              tags:
+                createdBy: crossplane
+                managedBy: messagewall-demo
+                environment: dev
+
+    # Lambda Functions (supports v1beta1 and v1beta2)
+    - name: add-tags-lambda-function
+      match:
+        any:
+          - resources:
+              kinds:
+                - lambda.aws.upbound.io/*/Function
+      mutate:
+        patchStrategicMerge:
+          spec:
+            forProvider:
+              tags:
+                createdBy: crossplane
+                managedBy: messagewall-demo
+                environment: dev
+
+    # CloudWatch Events / EventBridge Rules (v1beta1 only)
+    - name: add-tags-eventbridge-rule
+      match:
+        any:
+          - resources:
+              kinds:
+                - cloudwatchevents.aws.upbound.io/v1beta1/Rule
+      mutate:
+        patchStrategicMerge:
+          spec:
+            forProvider:
+              tags:
+                createdBy: crossplane
+                managedBy: messagewall-demo
+                environment: dev
