@@ -1,0 +1,149 @@
+# IAM roles for Lambda functions
+# See ADR-006 for IAM strategy and permission boundary requirements
+#
+# All roles must have MessageWallRoleBoundary permission boundary attached.
+# This ensures Lambda functions can only access messagewall-* resources.
+---
+# API Handler Lambda execution role
+# Permissions: DynamoDB read/write, EventBridge PutEvents, CloudWatch Logs
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: messagewall-api-role
+  annotations:
+    crossplane.io/external-name: messagewall-api-role
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    permissionsBoundary: arn:aws:iam::205074708100:policy/MessageWallRoleBoundary
+  providerConfigRef:
+    name: default
+---
+# Inline policy for API Handler role
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicy
+metadata:
+  name: messagewall-api-role-policy
+spec:
+  forProvider:
+    roleRef:
+      name: messagewall-api-role
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "DynamoDBAccess",
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:GetItem",
+              "dynamodb:PutItem",
+              "dynamodb:UpdateItem",
+              "dynamodb:Query"
+            ],
+            "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-*"
+          },
+          {
+            "Sid": "EventBridgeAccess",
+            "Effect": "Allow",
+            "Action": "events:PutEvents",
+            "Resource": "*"
+          },
+          {
+            "Sid": "CloudWatchLogsAccess",
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-*:*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default
+---
+# Snapshot Writer Lambda execution role
+# Permissions: DynamoDB read, S3 PutObject, CloudWatch Logs
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: messagewall-snapshot-role
+  annotations:
+    crossplane.io/external-name: messagewall-snapshot-role
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    permissionsBoundary: arn:aws:iam::205074708100:policy/MessageWallRoleBoundary
+  providerConfigRef:
+    name: default
+---
+# Inline policy for Snapshot Writer role
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicy
+metadata:
+  name: messagewall-snapshot-role-policy
+spec:
+  forProvider:
+    roleRef:
+      name: messagewall-snapshot-role
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "DynamoDBReadAccess",
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:GetItem",
+              "dynamodb:Query"
+            ],
+            "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-*"
+          },
+          {
+            "Sid": "S3WriteAccess",
+            "Effect": "Allow",
+            "Action": [
+              "s3:PutObject"
+            ],
+            "Resource": "arn:aws:s3:::messagewall-*/state.json"
+          },
+          {
+            "Sid": "CloudWatchLogsAccess",
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-*:*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default

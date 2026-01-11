@@ -20,11 +20,15 @@
       "Action": [
         "dynamodb:CreateTable",
         "dynamodb:DeleteTable",
+        "dynamodb:DescribeContinuousBackups",
         "dynamodb:DescribeTable",
+        "dynamodb:DescribeTimeToLive",
         "dynamodb:ListTagsOfResource",
         "dynamodb:TagResource",
         "dynamodb:UntagResource",
-        "dynamodb:UpdateTable"
+        "dynamodb:UpdateContinuousBackups",
+        "dynamodb:UpdateTable",
+        "dynamodb:UpdateTimeToLive"
       ],
       "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-*"
     },
@@ -66,6 +70,20 @@
       }
     },
     {
+      "Sid": "IAMRoleReadAndTag",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies",
+        "iam:ListRoleTags",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": "arn:aws:iam::205074708100:role/messagewall-*"
+    },
+    {
       "Sid": "IAMRoleManagement",
       "Effect": "Allow",
       "Action": [
@@ -74,13 +92,7 @@
         "iam:DeleteRole",
         "iam:DeleteRolePolicy",
         "iam:DetachRolePolicy",
-        "iam:GetRole",
-        "iam:GetRolePolicy",
-        "iam:ListAttachedRolePolicies",
-        "iam:ListRolePolicies",
         "iam:PutRolePolicy",
-        "iam:TagRole",
-        "iam:UntagRole",
         "iam:UpdateRole"
       ],
       "Resource": "arn:aws:iam::205074708100:role/messagewall-*",

@@ -1,0 +1,119 @@
+# S3 Bucket for static website hosting and Lambda artifacts
+# See ADR-002 (S3 Static Website Hosting) and ADR-003 (Lambda Artifact Storage)
+#
+# IMPORTANT: S3 bucket names must be globally unique. If 'messagewall-demo-dev'
+# is already taken, change it to something unique (e.g., messagewall-demo-dev-yourname)
+# and update all references in this file.
+---
+apiVersion: s3.aws.upbound.io/v1beta2
+kind: Bucket
+metadata:
+  name: messagewall-demo-bucket
+  annotations:
+    # Use a fixed bucket name for predictability and policy references
+    crossplane.io/external-name: messagewall-demo-dev
+spec:
+  forProvider:
+    region: us-east-1
+  providerConfigRef:
+    name: default
+---
+# Bucket ownership controls - required for public access with ACLs disabled
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketOwnershipControls
+metadata:
+  name: messagewall-demo-bucket-ownership
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-demo-bucket
+    rule:
+      - objectOwnership: BucketOwnerEnforced
+  providerConfigRef:
+    name: default
+---
+# Disable public access block to allow website hosting
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketPublicAccessBlock
+metadata:
+  name: messagewall-demo-bucket-public-access
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-demo-bucket
+    blockPublicAcls: false
+    blockPublicPolicy: false
+    ignorePublicAcls: false
+    restrictPublicBuckets: false
+  providerConfigRef:
+    name: default
+---
+# Enable static website hosting
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketWebsiteConfiguration
+metadata:
+  name: messagewall-demo-bucket-website
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-demo-bucket
+    indexDocument:
+      - suffix: index.html
+    errorDocument:
+      - key: error.html
+  providerConfigRef:
+    name: default
+---
+# CORS configuration for Lambda Function URL calls
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketCorsConfiguration
+metadata:
+  name: messagewall-demo-bucket-cors
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-demo-bucket
+    corsRule:
+      - allowedHeaders:
+          - "*"
+        allowedMethods:
+          - GET
+          - POST
+        allowedOrigins:
+          - "*"
+        exposeHeaders:
+          - ETag
+        maxAgeSeconds: 3000
+  providerConfigRef:
+    name: default
+---
+# Bucket policy for public read access to website content
+# Note: artifacts/ prefix is also readable; for demo simplicity we allow full public read
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketPolicy
+metadata:
+  name: messagewall-demo-bucket-policy
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-demo-bucket
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "PublicReadGetObject",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::messagewall-demo-dev/*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default
