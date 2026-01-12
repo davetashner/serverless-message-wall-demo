@@ -1,0 +1,53 @@
+# Lambda functions for Message Wall
+# See EPIC-3 for implementation details
+#
+# api-handler: Handles POST requests, updates DynamoDB, emits EventBridge events
+# snapshot-writer: Generates state.json from DynamoDB and writes to S3
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: Function
+metadata:
+  name: messagewall-api-handler
+  annotations:
+    crossplane.io/external-name: messagewall-api-handler
+spec:
+  forProvider:
+    region: us-east-1
+    runtime: python3.12
+    handler: handler.handler
+    memorySize: 128
+    timeout: 10
+    s3Bucket: messagewall-demo-dev
+    s3Key: artifacts/api-handler.zip
+    roleRef:
+      name: messagewall-api-role
+    environment:
+      - variables:
+          TABLE_NAME: messagewall-demo-dev
+          EVENT_BUS_NAME: default
+  providerConfigRef:
+    name: default
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: Function
+metadata:
+  name: messagewall-snapshot-writer
+  annotations:
+    crossplane.io/external-name: messagewall-snapshot-writer
+spec:
+  forProvider:
+    region: us-east-1
+    runtime: python3.12
+    handler: handler.handler
+    memorySize: 128
+    timeout: 10
+    s3Bucket: messagewall-demo-dev
+    s3Key: artifacts/snapshot-writer.zip
+    roleRef:
+      name: messagewall-snapshot-role
+    environment:
+      - variables:
+          TABLE_NAME: messagewall-demo-dev
+          BUCKET_NAME: messagewall-demo-dev
+  providerConfigRef:
+    name: default
