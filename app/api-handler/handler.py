@@ -8,6 +8,7 @@ Handles POST requests from the browser:
 4. Returns response with CORS headers
 """
 
+import base64
 import json
 import os
 import uuid
@@ -35,11 +36,14 @@ def handler(event, context):
     if method != "POST":
         return cors_response(405, {"error": "Method not allowed"})
 
-    # Parse request body
+    # Parse request body (may be base64 encoded by Function URL)
     try:
-        body = json.loads(event.get("body", "{}"))
+        raw_body = event.get("body", "{}")
+        if event.get("isBase64Encoded", False):
+            raw_body = base64.b64decode(raw_body).decode("utf-8")
+        body = json.loads(raw_body)
         message_text = body.get("text", "").strip()
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError):
         return cors_response(400, {"error": "Invalid JSON"})
 
     if not message_text:

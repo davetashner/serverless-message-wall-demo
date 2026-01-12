@@ -1,0 +1,55 @@
+# EventBridge rule to trigger snapshot-writer when messages are posted
+# See ISSUE-4.2 for requirements
+---
+# Rule to match MessagePosted events from api-handler
+apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
+kind: Rule
+metadata:
+  name: messagewall-snapshot-trigger
+  annotations:
+    crossplane.io/external-name: messagewall-snapshot-trigger
+spec:
+  forProvider:
+    region: us-east-1
+    eventBusName: default
+    eventPattern: |
+      {
+        "source": ["messagewall.api-handler"],
+        "detail-type": ["MessagePosted"]
+      }
+    state: ENABLED
+  providerConfigRef:
+    name: default
+---
+# Target to invoke snapshot-writer Lambda
+apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
+kind: Target
+metadata:
+  name: messagewall-snapshot-target
+spec:
+  forProvider:
+    region: us-east-1
+    eventBusName: default
+    ruleRef:
+      name: messagewall-snapshot-trigger
+    targetId: snapshot-writer
+    arn: arn:aws:lambda:us-east-1:205074708100:function:messagewall-snapshot-writer
+  providerConfigRef:
+    name: default
+---
+# Permission for EventBridge to invoke snapshot-writer Lambda
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: Permission
+metadata:
+  name: messagewall-eventbridge-invoke-snapshot
+spec:
+  forProvider:
+    region: us-east-1
+    action: lambda:InvokeFunction
+    functionNameRef:
+      name: messagewall-snapshot-writer
+    principal: events.amazonaws.com
+    sourceArn: arn:aws:events:us-east-1:205074708100:rule/messagewall-snapshot-trigger
+    statementId: AllowEventBridgeInvoke
+  providerConfigRef:
+    name: default

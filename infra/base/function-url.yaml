@@ -1,0 +1,25 @@
+# Lambda Function URL for api-handler
+# Exposes the api-handler Lambda to the browser
+# See ISSUE-4.1 for requirements
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: FunctionURL
+metadata:
+  name: messagewall-api-handler-url
+spec:
+  forProvider:
+    region: us-east-1
+    functionNameRef:
+      name: messagewall-api-handler
+    authorizationType: NONE
+    cors:
+      - allowCredentials: false
+        allowHeaders:
+          - "*"
+        allowMethods:
+          - "*"
+        allowOrigins:
+          - "*"
+        maxAge: 3600
+  providerConfigRef:
+    name: default
