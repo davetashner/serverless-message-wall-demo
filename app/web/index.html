@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Message Wall</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 2rem;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .counter {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .counter span {
+            font-weight: bold;
+            font-size: 1.5rem;
+        }
+
+        .post-form {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 2rem;
+        }
+
+        .post-form textarea {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 80px;
+            transition: border-color 0.2s;
+        }
+
+        .post-form textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .post-form button {
+            margin-top: 1rem;
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .post-form button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .post-form button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .messages {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .message {
+            background: white;
+            border-radius: 12px;
+            padding: 1.25rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-text {
+            font-size: 1.1rem;
+            color: #333;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+
+        .message-time {
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: white;
+            opacity: 0.8;
+            padding: 2rem;
+        }
+
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            padding: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Message Wall</h1>
+            <div class="counter">
+                <span id="message-count">-</span> messages posted
+            </div>
+        </header>
+
+        <div class="post-form">
+            <textarea id="message-input" placeholder="Write your message..." maxlength="500"></textarea>
+            <button id="post-button" onclick="postMessage()">Post Message</button>
+        </div>
+
+        <div id="error-container"></div>
+        <div id="messages-container" class="messages">
+            <div class="loading">Loading messages...</div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://fbp4pzl2vql5gbqyneyaas4tvq0grxvd.lambda-url.us-east-1.on.aws/';
+        const STATE_URL = 'state.json';
+
+        async function loadMessages() {
+            try {
+                const response = await fetch(STATE_URL + '?t=' + Date.now());
+                if (!response.ok) throw new Error('Failed to load');
+
+                const data = await response.json();
+                renderMessages(data);
+            } catch (error) {
+                document.getElementById('messages-container').innerHTML =
+                    '<div class="empty-state">No messages yet. Be the first to post!</div>';
+                document.getElementById('message-count').textContent = '0';
+            }
+        }
+
+        function renderMessages(data) {
+            document.getElementById('message-count').textContent = data.messageCount || 0;
+
+            const container = document.getElementById('messages-container');
+
+            if (!data.messages || data.messages.length === 0) {
+                container.innerHTML = '<div class="empty-state">No messages yet. Be the first to post!</div>';
+                return;
+            }
+
+            container.innerHTML = data.messages.map(msg => `
+                <div class="message">
+                    <div class="message-text">${escapeHtml(msg.text)}</div>
+                    <div class="message-time">${formatTime(msg.createdAt)}</div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+
+        async function postMessage() {
+            const input = document.getElementById('message-input');
+            const button = document.getElementById('post-button');
+            const errorContainer = document.getElementById('error-container');
+
+            const text = input.value.trim();
+            if (!text) return;
+
+            button.disabled = true;
+            button.textContent = 'Posting...';
+            errorContainer.innerHTML = '';
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || 'Failed to post');
+                }
+
+                input.value = '';
+
+                // Wait a moment for EventBridge to trigger snapshot update
+                setTimeout(loadMessages, 1500);
+
+            } catch (error) {
+                errorContainer.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Post Message';
+            }
+        }
+
+        // Handle Enter key in textarea (Shift+Enter for newline)
+        document.getElementById('message-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                postMessage();
+            }
+        });
+
+        // Load messages on page load
+        loadMessages();
+    </script>
+</body>
+</html>

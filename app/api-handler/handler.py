@@ -5,7 +5,8 @@ Handles POST requests from the browser:
 1. Increments messageCount in DynamoDB METADATA record
 2. Stores the message in DynamoDB with PK=MESSAGE, SK=<timestamp>#<uuid>
 3. Emits an EventBridge event to trigger snapshot-writer
-4. Returns response with CORS headers
+
+Note: CORS is handled by the Lambda Function URL configuration.
 """
 
 import base64
@@ -29,12 +30,12 @@ def handler(event, context):
     """Lambda handler for API requests."""
     # Handle CORS preflight
     if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
-        return cors_response(200, "")
+        return response(200, "")
 
     # Only accept POST
     method = event.get("requestContext", {}).get("http", {}).get("method", "")
     if method != "POST":
-        return cors_response(405, {"error": "Method not allowed"})
+        return response(405, {"error": "Method not allowed"})
 
     # Parse request body (may be base64 encoded by Function URL)
     try:
@@ -44,14 +45,14 @@ def handler(event, context):
         body = json.loads(raw_body)
         message_text = body.get("text", "").strip()
     except (json.JSONDecodeError, ValueError):
-        return cors_response(400, {"error": "Invalid JSON"})
+        return response(400, {"error": "Invalid JSON"})
 
     if not message_text:
-        return cors_response(400, {"error": "Message text is required"})
+        return response(400, {"error": "Message text is required"})
 
     # Limit message length
     if len(message_text) > 500:
-        return cors_response(400, {"error": "Message too long (max 500 chars)"})
+        return response(400, {"error": "Message too long (max 500 chars)"})
 
     table = dynamodb.Table(TABLE_NAME)
     now = datetime.now(timezone.utc)
@@ -94,7 +95,7 @@ def handler(event, context):
             ]
         )
 
-        return cors_response(
+        return response(
             200,
             {
                 "success": True,
@@ -105,18 +106,15 @@ def handler(event, context):
 
     except Exception as e:
         print(f"Error processing request: {e}")
-        return cors_response(500, {"error": "Internal server error"})
+        return response(500, {"error": "Internal server error"})
 
 
-def cors_response(status_code, body):
-    """Return response with CORS headers."""
+def response(status_code, body):
+    """Return JSON response. CORS is handled by Function URL."""
     return {
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
         },
         "body": json.dumps(body) if isinstance(body, dict) else body,
     }
