@@ -1,0 +1,109 @@
+#!/bin/bash
+# Smoke test for the message wall deployment
+# Posts a message and verifies it appears in DynamoDB and S3
+set -euo pipefail
+
+CLUSTER_CONTEXT="kind-actuator"
+TABLE_NAME="messagewall-demo-dev"
+BUCKET_NAME="messagewall-demo-dev"
+REGION="us-east-1"
+
+echo "=== Message Wall Smoke Test ==="
+echo ""
+
+# Get Function URL
+FUNCTION_URL=$(kubectl get functionurl messagewall-api-handler-url -o jsonpath='{.status.atProvider.functionUrl}' --context "${CLUSTER_CONTEXT}" 2>/dev/null)
+if [[ -z "${FUNCTION_URL}" ]]; then
+    echo "FAIL: Could not get Function URL. Is the deployment complete?"
+    exit 1
+fi
+echo "API URL: ${FUNCTION_URL}"
+
+# Generate unique test message
+TEST_ID="smoke-test-$(date +%s)"
+TEST_MESSAGE="Smoke test message: ${TEST_ID}"
+echo "Test message: ${TEST_MESSAGE}"
+echo ""
+
+# Test 1: Post a message
+echo "Test 1: Posting message to API..."
+RESPONSE=$(curl -s -X POST "${FUNCTION_URL}" \
+    -H "Content-Type: application/json" \
+    -d "{\"text\":\"${TEST_MESSAGE}\"}")
+
+if echo "${RESPONSE}" | grep -q '"success": true'; then
+    MESSAGE_ID=$(echo "${RESPONSE}" | grep -o '"messageId": "[^"]*"' | cut -d'"' -f4)
+    echo "PASS: Message posted successfully (ID: ${MESSAGE_ID})"
+else
+    echo "FAIL: Could not post message"
+    echo "Response: ${RESPONSE}"
+    exit 1
+fi
+echo ""
+
+# Wait for EventBridge to trigger snapshot-writer
+echo "Waiting for snapshot to update..."
+sleep 3
+
+# Test 2: Verify message in DynamoDB
+echo "Test 2: Checking DynamoDB for message..."
+DYNAMO_RESULT=$(aws dynamodb query \
+    --table-name "${TABLE_NAME}" \
+    --key-condition-expression "PK = :pk" \
+    --expression-attribute-values '{":pk":{"S":"MESSAGE"}}' \
+    --region "${REGION}" \
+    --query "Items[?contains(SK.S, '${MESSAGE_ID}')]" \
+    --output json 2>/dev/null)
+
+if echo "${DYNAMO_RESULT}" | grep -q "${TEST_ID}"; then
+    echo "PASS: Message found in DynamoDB"
+else
+    echo "FAIL: Message not found in DynamoDB"
+    exit 1
+fi
+echo ""
+
+# Test 3: Verify state.json in S3
+echo "Test 3: Checking S3 for state.json..."
+S3_RESULT=$(aws s3 cp "s3://${BUCKET_NAME}/state.json" - --region "${REGION}" 2>/dev/null)
+
+if echo "${S3_RESULT}" | grep -q "${TEST_ID}"; then
+    echo "PASS: Message found in state.json"
+else
+    echo "FAIL: Message not found in state.json"
+    echo "Note: EventBridge may still be processing. Try again in a few seconds."
+    exit 1
+fi
+echo ""
+
+# Test 4: Verify website is accessible
+echo "Test 4: Checking website accessibility..."
+WEBSITE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${BUCKET_NAME}.s3-website-${REGION}.amazonaws.com/")
+if [[ "${WEBSITE_STATUS}" == "200" ]]; then
+    echo "PASS: Website is accessible (HTTP ${WEBSITE_STATUS})"
+else
+    echo "FAIL: Website returned HTTP ${WEBSITE_STATUS}"
+    exit 1
+fi
+echo ""
+
+# Test 5: Verify message count incremented
+echo "Test 5: Checking message count..."
+COUNT=$(aws dynamodb get-item \
+    --table-name "${TABLE_NAME}" \
+    --key '{"PK":{"S":"METADATA"},"SK":{"S":"METADATA"}}' \
+    --region "${REGION}" \
+    --query 'Item.messageCount.N' \
+    --output text 2>/dev/null)
+
+if [[ "${COUNT}" -gt 0 ]]; then
+    echo "PASS: Message count is ${COUNT}"
+else
+    echo "FAIL: Message count is invalid"
+    exit 1
+fi
+echo ""
+
+echo "=== All Tests Passed ==="
+echo ""
+echo "Website: http://${BUCKET_NAME}.s3-website-${REGION}.amazonaws.com/"
