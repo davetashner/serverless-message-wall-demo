@@ -1,7 +1,7 @@
 # ADR-008: Setup Wizard for New Users
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 New users cloning this repository cannot deploy it immediately because configuration values are hardcoded throughout the codebase:
