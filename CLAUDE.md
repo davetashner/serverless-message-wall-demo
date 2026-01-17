@@ -17,7 +17,8 @@ Browser ← GET state.json ← S3
 - **snapshot-writer Lambda**: Triggered by EventBridge, reads DynamoDB, writes state.json to S3
 - **S3**: Hosts static website, state.json snapshot, and Lambda artifacts (in `artifacts/` prefix)
 - **Crossplane**: Manages all AWS resources declaratively from Kubernetes
-- **ConfigHub** (future): Authoritative store for rendered Crossplane manifests; actuator pulls from ConfigHub
+- **ConfigHub**: Authoritative store for rendered Crossplane manifests
+- **ArgoCD**: Syncs configuration from ConfigHub to Kubernetes via CMP plugin
 
 ## Build and Deploy Commands
 
@@ -34,6 +35,13 @@ scripts/bootstrap-aws-providers.sh
 
 # Phase 4: Install Kyverno
 scripts/bootstrap-kyverno.sh
+
+# Phase 5: Install ConfigHub worker (optional, for ConfigHub sync)
+cub worker create --space messagewall-dev actuator-sync --allow-exists
+cub worker install actuator-sync --space messagewall-dev --provider-types kubernetes --export --include-secret | kubectl apply -f -
+
+# Phase 6: Install ArgoCD (optional, for observability)
+scripts/bootstrap-argocd.sh
 
 # Build Lambda artifacts (future)
 cd app/api-handler && ./build.sh
@@ -90,12 +98,13 @@ Key technical decisions are documented in `docs/decisions/`:
 - **ADR-005**: ConfigHub Integration Architecture
 - **ADR-006**: Crossplane Installation and AWS IAM Strategy
 - **ADR-007**: Kyverno Policy Enforcement for AWS Resource Tags
+- **ADR-009**: ArgoCD Config Management Plugin for ConfigHub Sync
 
 ## Directory Structure
 
 - `app/` - Lambda handlers (Python) and static web assets
 - `infra/` - Crossplane manifests for AWS resources (base + env overlays)
-- `platform/` - Crossplane installation manifests (crossplane/, kyverno/, iam/)
+- `platform/` - Crossplane installation manifests (crossplane/, kyverno/, argocd/, iam/)
 - `scripts/` - Deployment and operational scripts
 - `beads/` - Issue tracking (backlog.jsonl, principles.md)
 - `docs/decisions/` - Architecture Decision Records

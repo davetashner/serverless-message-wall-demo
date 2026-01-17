@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: messagewall-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  # Source: ConfigHub space via CMP
+  source:
+    # RepoURL is required but not used by CMP; set to a placeholder
+    repoURL: https://confighub.example.com/messagewall-dev
+    # Path is required but not used by CMP
+    path: .
+    # Use the ConfigHub CMP plugin
+    plugin:
+      name: confighub
+      env:
+        - name: CONFIGHUB_SPACE
+          value: messagewall-dev
+
+  # Destination: the local actuator cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  # Sync policy
+  syncPolicy:
+    # Automated sync: continuously reconcile ConfigHub -> Kubernetes
+    automated:
+      # Remove resources from cluster when deleted from ConfigHub
+      prune: true
+      # Auto-heal: revert manual changes to match ConfigHub
+      selfHeal: true
+      # Allow empty: don't fail if ConfigHub returns no resources
+      allowEmpty: false
+
+    # Sync options
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+
+    # Retry on sync failure
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignore differences in fields that change frequently
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+    # Crossplane managed resources have status fields that change
+    - group: "*.aws.upbound.io"
+      kind: "*"
+      jsonPointers:
+        - /status

@@ -38,12 +38,14 @@ Required tools:
 
 ## Overview
 
-The setup consists of four phases:
+The setup consists of six phases:
 
 1. **Configuration** - Run setup wizard to generate files
 2. **AWS IAM Setup** - Create the permission boundary and Crossplane user
 3. **Kubernetes Cluster** - Create a local kind cluster with Crossplane
 4. **Deployment** - Deploy the message wall application
+5. **ConfigHub Worker** - Install ConfigHub worker for sync (optional)
+6. **ArgoCD** - Install ArgoCD for observability (optional)
 
 ## Phase 1: Configuration
 
@@ -164,6 +166,67 @@ Or manually:
 2. Post a message
 3. Refresh and verify it appears
 
+## Phase 5: Install ConfigHub Worker (Optional)
+
+If you're using ConfigHub as the configuration control plane, install a ConfigHub worker to sync from ConfigHub to the actuator cluster.
+
+### Create and Install the Worker
+
+```bash
+# Create worker in ConfigHub (if not already created)
+cub worker create --space messagewall-dev actuator-sync --allow-exists
+
+# Install worker in Kubernetes
+cub worker install actuator-sync --space messagewall-dev \
+    --provider-types kubernetes --export --include-secret | kubectl apply -f -
+```
+
+**Verify:**
+```bash
+kubectl get pods -n confighub
+# Worker pod should be Running
+
+kubectl logs -n confighub -l app=actuator-sync --tail=10
+# Should show "Successfully connected to event stream"
+```
+
+### Configure Units to Sync
+
+```bash
+# Set target for all units
+cub unit set-target actuator-sync-kubernetes-yaml-cluster \
+    --space messagewall-dev \
+    --unit dynamodb,eventbridge,function-url,iam,lambda,s3
+
+# Apply units to sync to Kubernetes
+cub unit apply --space messagewall-dev \
+    --unit dynamodb,eventbridge,function-url,iam,lambda,s3 --wait
+```
+
+**Verify sync status:**
+```bash
+cub unit list --space messagewall-dev
+# All units should show STATUS=Ready
+```
+
+With this setup, changes published to ConfigHub will automatically sync to the actuator cluster and reconcile to AWS.
+
+## Phase 6: Install ArgoCD (Optional)
+
+ArgoCD provides a UI for observability and can manage non-ConfigHub resources.
+
+```bash
+./scripts/bootstrap-argocd.sh
+```
+
+**Access the ArgoCD UI:**
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Open https://localhost:8080
+# Username: admin
+# Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+```
+
 ## All-in-One Deployment
 
 To run the entire setup and deployment sequence:
@@ -221,10 +284,13 @@ Then re-run finalize:
 | `scripts/bootstrap-crossplane.sh` | Install Crossplane |
 | `scripts/bootstrap-aws-providers.sh` | Install AWS providers |
 | `scripts/bootstrap-kyverno.sh` | Install Kyverno (optional) |
+| `scripts/bootstrap-argocd.sh` | Install ArgoCD (optional) |
+| `scripts/setup-argocd-confighub-auth.sh` | Configure ConfigHub credentials |
 | `scripts/deploy-dev.sh` | Deploy infrastructure |
 | `scripts/finalize-web.sh` | Update web app with Function URL |
 | `scripts/smoke-test.sh` | Verify deployment |
 | `scripts/cleanup.sh` | Remove all resources |
 | `scripts/test-setup.sh` | Test suite for wizard |
 | `platform/iam/*.json` | IAM policies (generated) |
+| `platform/argocd/*.yaml` | ArgoCD configuration |
 | `infra/base/*.yaml` | Crossplane manifests (generated) |

@@ -84,6 +84,7 @@ See [ADR-005](decisions/005-confighub-integration.md) for the full ConfigHub int
 **Definition**: The Actuation Plane is where infrastructure gets created and maintained. It runs controllers that watch authoritative configuration and reconcile the actual state of cloud resources to match. In this platform, Kubernetes serves exclusively as an actuator—no application code runs here.
 
 **What happens here**:
+- ArgoCD syncs configuration from ConfigHub to Kubernetes via a Config Management Plugin
 - Crossplane controllers watch Kubernetes CRDs and create/update/delete AWS resources
 - Kyverno policies mutate resources (adding required tags) and validate compliance
 - The reconciliation loop continuously corrects drift between desired and actual state
@@ -97,10 +98,15 @@ See [ADR-005](decisions/005-confighub-integration.md) for the full ConfigHub int
 | `platform/kyverno/policies/mutate-aws-tags.yaml` | Tag injection policy |
 | `platform/kyverno/policies/validate-aws-tags.yaml` | Tag validation policy |
 | `platform/kyverno/values.yaml` | Kyverno Helm configuration |
+| `platform/argocd/values.yaml` | ArgoCD Helm configuration |
+| `platform/argocd/cmp-plugin.yaml` | ConfigHub CMP plugin |
+| `platform/argocd/application-dev.yaml` | ArgoCD Application for dev |
 | `scripts/bootstrap-kind.sh` | Local cluster creation |
 | `scripts/bootstrap-crossplane.sh` | Crossplane installation |
 | `scripts/bootstrap-aws-providers.sh` | AWS provider setup |
 | `scripts/bootstrap-kyverno.sh` | Kyverno installation |
+| `scripts/bootstrap-argocd.sh` | ArgoCD installation |
+| `scripts/setup-argocd-confighub-auth.sh` | ConfigHub credentials setup |
 
 **Key property**: The Actuation Plane is stateless with respect to application logic. It only knows how to reconcile declared resources to their desired state. If Kubernetes disappears, the Runtime Plane continues operating—we just lose the ability to make changes.
 
@@ -142,23 +148,24 @@ See [ADR-005](decisions/005-confighub-integration.md) for the full ConfigHub int
                     │  ADRs            │
                     └────────┬─────────┘
                              │
-                             │ setup.sh renders templates
+                             │ CI renders templates
                              │ with environment values
                              ▼
                     ┌──────────────────┐
                     │ AUTHORITY PLANE  │
                     │                  │
-                    │  Rendered YAML   │
-                    │  Validated config│
-                    │  (Future: ConfigHub)
+                    │  ConfigHub       │
+                    │  (authoritative) │
+                    │  Policy checks   │
                     └────────┬─────────┘
                              │
-                             │ kubectl apply / deploy-dev.sh
-                             │
+                             │ ArgoCD CMP pulls from ConfigHub
+                             │ (no direct kubectl from CI)
                              ▼
                     ┌──────────────────┐
                     │ ACTUATION PLANE  │
                     │                  │
+                    │  ArgoCD (sync)   │
                     │  Crossplane      │
                     │  Kyverno         │
                     │  (Kubernetes)    │
@@ -201,4 +208,5 @@ See [ADR-005](decisions/005-confighub-integration.md) for the full ConfigHub int
 - [ADR-005: ConfigHub Integration Architecture](decisions/005-confighub-integration.md)
 - [ADR-006: Crossplane Installation and IAM Strategy](decisions/006-crossplane-and-iam-strategy.md)
 - [ADR-007: Kyverno Policy Enforcement](decisions/007-kyverno-policy-enforcement.md)
+- [ADR-009: ArgoCD Config Management Plugin for ConfigHub Sync](decisions/009-argocd-confighub-sync.md)
 - [Platform Invariants](invariants.md)

@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmp-confighub
+  namespace: argocd
+data:
+  plugin.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: ConfigManagementPlugin
+    metadata:
+      name: confighub
+    spec:
+      version: v1.0
+
+      # Discovery: identify when this plugin should be used
+      # ArgoCD uses this to auto-detect the plugin for a given source
+      discover:
+        find:
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # This plugin handles ConfigHub spaces
+              # Check if CONFIGHUB_SPACE env var is set (passed from Application spec)
+              if [ -n "$CONFIGHUB_SPACE" ]; then
+                echo "confighub"
+              fi
+
+      # Init: authenticate with ConfigHub as a worker
+      init:
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Initializing ConfigHub CMP..."
+            if [ -z "$CONFIGHUB_WORKER_ID" ] || [ -z "$CONFIGHUB_WORKER_SECRET" ]; then
+              echo "Warning: ConfigHub credentials not configured"
+              echo "Run scripts/setup-argocd-confighub-auth.sh to configure"
+              exit 0
+            fi
+            cub auth login --as-worker
+
+      # Generate: fetch all units from ConfigHub space and output as YAML
+      generate:
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            if [ -z "$CONFIGHUB_SPACE" ]; then
+              echo "Error: CONFIGHUB_SPACE not set" >&2
+              exit 1
+            fi
+
+            if [ -z "$CONFIGHUB_WORKER_ID" ]; then
+              echo "# ConfigHub credentials not configured"
+              echo "# Run scripts/setup-argocd-confighub-auth.sh to configure"
+              exit 0
+            fi
+
+            # List all units in the space and fetch their content
+            for unit in $(cub unit list --space "$CONFIGHUB_SPACE" --output names 2>/dev/null); do
+              cub unit get --space "$CONFIGHUB_SPACE" "$unit" --output yaml 2>/dev/null
+              echo "---"
+            done
