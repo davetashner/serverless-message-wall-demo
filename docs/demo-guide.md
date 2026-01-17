@@ -229,7 +229,49 @@ cub unit history --space messagewall-dev lambda
 
 > See `docs/bulk-changes-and-change-management.md` for detailed scenarios and risk mitigation strategies.
 
-### Part 5: Controlled Rollout of Revisions (5-10 min)
+### Part 5: Break-Glass Recovery (5-10 min)
+
+> "What happens when you need to make an emergency change directly in AWS?"
+
+**Explain the Scenario:**
+> "Sometimes incidents require immediate action—faster than the normal ConfigHub flow allows. This is called 'break-glass' access."
+
+**Run the Break-Glass Demo:**
+```bash
+./scripts/demo-break-glass-recovery.sh
+```
+
+This interactive demo shows:
+1. Simulated incident (Lambda memory pressure)
+2. Emergency AWS-side change (bypassing normal flow)
+3. Drift detection (ConfigHub vs AWS divergence)
+4. Reconciliation (importing emergency change into ConfigHub)
+5. Audit trail preservation (incident context captured)
+
+**Key Points:**
+- Break-glass is for emergencies, not convenience
+- Without reconciliation, Crossplane will revert the emergency change
+- Always include incident context in reconciliation
+- ConfigHub preserves full audit trail of break-glass events
+
+**Commands Demonstrated:**
+```bash
+# Direct AWS change (break-glass)
+aws lambda update-function-configuration \
+  --function-name messagewall-api-handler \
+  --memory-size 512
+
+# Reconcile back to ConfigHub
+cub unit update --space messagewall-dev lambda <config> \
+  --change-desc "Break-glass: INC-2024-001 - Memory increase for incident"
+
+# View audit trail
+cub unit history --space messagewall-dev lambda
+```
+
+> See `docs/confighub-crossplane-narrative.md` for a complete walkthrough of the ConfigHub + Crossplane architecture.
+
+### Part 6: Controlled Rollout of Revisions (5-10 min)
 
 > "What if you want to push changes but NOT deploy them immediately?"
 
@@ -351,4 +393,6 @@ Standard IAM policies say what a user CAN do. Permission boundaries cap what rol
 | ConfigHub Integration | `docs/decisions/005-confighub-integration-architecture.md` |
 | **Bulk Change Demo Script** | `scripts/demo-bulk-change.sh` |
 | **Controlled Rollout Demo** | `scripts/demo-revision-rollout.sh` |
+| **Break-Glass Recovery Demo** | `scripts/demo-break-glass-recovery.sh` |
+| **ConfigHub + Crossplane Narrative** | `docs/confighub-crossplane-narrative.md` |
 | ArgoCD + ConfigHub Sync | `docs/decisions/009-argocd-confighub-sync.md`, `platform/argocd/` |

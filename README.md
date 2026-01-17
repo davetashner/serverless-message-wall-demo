@@ -295,6 +295,7 @@ This demo is intentionally designed to evolve.
 
 - **Bulk Configuration Changes**: See `docs/bulk-changes-and-change-management.md` for detailed scenarios including security patching, risk mitigation strategies, and change management procedures
 - **ConfigHub Integration**: See `docs/decisions/005-confighub-integration-architecture.md` for how ConfigHub fits into the deployment flow
+- **ConfigHub + Crossplane Narrative**: See `docs/confighub-crossplane-narrative.md` for a complete walkthrough of how ConfigHub, Crossplane, and AWS work together—including controlled rollouts, bulk changes, and break-glass recovery
 
 ### Future Extensions
 
