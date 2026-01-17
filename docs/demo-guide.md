@@ -149,40 +149,75 @@ cat platform/iam/messagewall-role-boundary.json | jq .
 **Key Point:**
 > "If Crossplane is compromised, the attacker can only affect messagewall resources. They cannot create admin roles or access other parts of AWS."
 
-### Part 4: Looking Ahead - ConfigHub Integration (5-10 min)
+### Part 4: ConfigHub Integration and Bulk Changes (10-15 min)
 
-> "This is the foundation. The next step is ConfigHub integration."
+> "ConfigHub is now integrated as the authoritative configuration store."
 
 **Show the Architecture Diagram:**
 ```
-Git (authoring) → Render CRDs → ConfigHub (authoritative) → Actuator → AWS
+Git (authoring) → Render CRDs (CI) → ConfigHub (authoritative) → ArgoCD → Actuator → AWS
 ```
 
-**Explain the Vision:**
+**Explain the Integration:**
 1. Developers author Crossplane manifests in Git
-2. CI renders them to fully-resolved YAML
+2. CI renders them to fully-resolved YAML and publishes to ConfigHub
 3. ConfigHub stores the rendered config as the source of truth
-4. Actuator pulls from ConfigHub (not directly from Git)
-5. Changes can be made in ConfigHub and flow to AWS
+4. ArgoCD pulls from ConfigHub and applies to the actuator cluster
+5. Crossplane reconciles to AWS
 
 > "This enables bulk configuration changes, policy enforcement at the config layer, and a complete audit trail."
 
-**Bulk Change Demo (Optional Extension):**
+**Bulk Change Demo - Using the Demo Script:**
 
-> "Imagine security mandates a new environment variable on all Lambda functions. Traditionally, you'd edit 50 files and create a massive PR. With ConfigHub:"
+> "Imagine security mandates a new environment variable on all Lambda functions. Traditionally, you'd edit 50 files and create a massive PR. With ConfigHub, we can do this in a single operation."
 
+**Step 1: Preview the change (always safe to run):**
 ```bash
-# Find all Lambda functions
-ch unit list --where "kind=Function AND apiVersion contains lambda"
+# See what would change WITHOUT making any modifications
+./scripts/demo-bulk-change.sh env SECURITY_LOG_ENDPOINT=https://security.internal/ingest --dry-run
+```
 
-# Preview the change (without applying)
-ch fn set-env-var --var SECURITY_LOG_ENDPOINT --value "https://security.internal/ingest" \
-  --where "kind=Function" --dry-run
+**Step 2: Apply the change:**
+```bash
+# Add the env var to both Lambda functions in one operation
+./scripts/demo-bulk-change.sh env SECURITY_LOG_ENDPOINT=https://security.internal/ingest \
+  --desc "SEC-2024-001: Add security logging"
+```
 
-# Apply to dev first, then promote to prod after validation
-ch changeset create "security-logging" --description "SEC-2024-001"
-ch fn set-env-var --var SECURITY_LOG_ENDPOINT --value "https://security.internal/ingest" \
-  --where "kind=Function AND environment=dev" --changeset "security-logging"
+**Step 3: Verify in AWS:**
+```bash
+# Check that Crossplane reconciled the change
+./scripts/demo-bulk-change.sh env SECURITY_LOG_ENDPOINT=https://security.internal/ingest --verify
+```
+
+**Other Bulk Change Examples:**
+```bash
+# Update memory on all Lambda functions
+./scripts/demo-bulk-change.sh memory 256 --dry-run
+./scripts/demo-bulk-change.sh memory 256
+
+# Update timeout
+./scripts/demo-bulk-change.sh timeout 15 --dry-run
+./scripts/demo-bulk-change.sh timeout 15
+
+# Add/update environment variable
+./scripts/demo-bulk-change.sh env LOG_LEVEL=DEBUG
+
+# Remove environment variable
+./scripts/demo-bulk-change.sh remove-env LOG_LEVEL
+```
+
+**What This Demonstrates:**
+1. **Single operation** - Both Lambda functions updated at once
+2. **Single revision** - One ConfigHub change, not two
+3. **Preview before apply** - `--dry-run` shows exact changes
+4. **Audit trail** - `--desc` provides change context
+5. **End-to-end verification** - `--verify` confirms AWS state
+
+**View Change History:**
+```bash
+# See all revisions for the Lambda unit
+cub unit history --space messagewall-dev lambda
 ```
 
 **Key Points:**
@@ -268,3 +303,5 @@ Standard IAM policies say what a user CAN do. Permission boundaries cap what rol
 | Architecture Decisions | `docs/decisions/*.md` |
 | Bulk Changes & Risk Mitigation | `docs/bulk-changes-and-change-management.md` |
 | ConfigHub Integration | `docs/decisions/005-confighub-integration-architecture.md` |
+| **Bulk Change Demo Script** | `scripts/demo-bulk-change.sh` |
+| ArgoCD + ConfigHub Sync | `docs/decisions/009-argocd-confighub-sync.md`, `platform/argocd/` |
