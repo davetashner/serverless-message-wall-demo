@@ -72,6 +72,29 @@ jobs:
             echo "Rendered: $outfile"
           done
 
+      - name: Install validation tools
+        run: |
+          # Install yq for YAML parsing
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Validate policies
+        id: validate
+        run: |
+          echo "## Policy Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if ./scripts/validate-policies.sh rendered 2>&1 | tee validation-output.txt; then
+            echo "✅ All policy checks passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Policy violations found:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat validation-output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Authenticate to ConfigHub
         run: cub auth login --as-worker
         env:

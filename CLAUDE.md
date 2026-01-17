@@ -70,6 +70,16 @@ bd create "title"    # Create new issue
 bd update <id> --status in_progress
 ```
 
+### Before Pushing to Main
+
+**Always update `beads/backlog.jsonl` before pushing to main.** When completing work on an issue:
+
+1. Mark the issue status as `"done"` in `beads/backlog.jsonl`
+2. If all issues in an epic are done, mark the epic status as `"done"`
+3. Include the backlog update in the same commit or PR as the completed work
+
+This keeps the backlog in sync with actual progress and avoids orphaned "pending" issues for completed work.
+
 ## Architecture Decision Records
 
 Key technical decisions are documented in `docs/decisions/`:
