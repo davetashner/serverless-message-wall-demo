@@ -43,6 +43,7 @@ BUCKET_NAME=""
 NON_INTERACTIVE=false
 DRY_RUN=false
 FORCE=false
+CONTINUE_DEPLOY=false
 
 # State file location
 STATE_FILE="${PROJECT_ROOT}/.setup-state.json"
@@ -82,6 +83,7 @@ Options:
   --non-interactive     Run without prompts (requires --account-id)
   --dry-run             Show what would be generated without writing files
   --force               Overwrite existing configuration without warning
+  --deploy              After setup, run the full bootstrap and deployment
   -h, --help            Show this help message
 
 Examples:
@@ -136,6 +138,10 @@ parse_args() {
                 ;;
             --force)
                 FORCE=true
+                shift
+                ;;
+            --deploy)
+                CONTINUE_DEPLOY=true
                 shift
                 ;;
             -h|--help)
@@ -458,6 +464,77 @@ show_next_steps() {
 }
 
 #------------------------------------------------------------------------------
+# Deployment integration
+#------------------------------------------------------------------------------
+
+offer_deployment() {
+    echo ""
+    read -rp "Would you like to run the full deployment now? [y/N]: " deploy_confirm
+    if [[ "${deploy_confirm}" =~ ^[Yy]$ ]]; then
+        CONTINUE_DEPLOY=true
+    fi
+}
+
+run_deployment() {
+    echo ""
+    echo -e "${BOLD}=== Starting Deployment ===${NC}"
+    echo ""
+    
+    # Check prerequisites first
+    log_info "Checking prerequisites..."
+    if ! "${SCRIPT_DIR}/check-prerequisites.sh"; then
+        log_error "Prerequisites check failed. Please install missing tools."
+        exit 1
+    fi
+    echo ""
+    
+    # Check if IAM boundary policy exists
+    log_info "Checking for MessageWallRoleBoundary policy..."
+    if ! aws iam get-policy --policy-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/MessageWallRoleBoundary" &>/dev/null; then
+        log_warn "MessageWallRoleBoundary policy not found."
+        echo ""
+        echo "Creating IAM permission boundary policy..."
+        aws iam create-policy \
+            --policy-name MessageWallRoleBoundary \
+            --policy-document "file://${PROJECT_ROOT}/platform/iam/messagewall-role-boundary.json" \
+            --description "Permission boundary for Message Wall Lambda roles"
+        log_success "Created MessageWallRoleBoundary policy"
+    else
+        log_success "MessageWallRoleBoundary policy exists"
+    fi
+    echo ""
+    
+    # Bootstrap kind cluster
+    log_info "Bootstrapping kind cluster..."
+    "${SCRIPT_DIR}/bootstrap-kind.sh"
+    echo ""
+    
+    # Bootstrap Crossplane
+    log_info "Bootstrapping Crossplane..."
+    "${SCRIPT_DIR}/bootstrap-crossplane.sh"
+    echo ""
+    
+    # Bootstrap AWS providers
+    log_info "Bootstrapping AWS providers..."
+    "${SCRIPT_DIR}/bootstrap-aws-providers.sh"
+    echo ""
+    
+    # Deploy infrastructure
+    log_info "Deploying infrastructure..."
+    "${SCRIPT_DIR}/deploy-dev.sh"
+    echo ""
+    
+    # Finalize web app
+    log_info "Finalizing web application..."
+    "${SCRIPT_DIR}/finalize-web.sh"
+    echo ""
+    
+    echo -e "${BOLD}=== Deployment Complete ===${NC}"
+    echo ""
+    echo "Run './scripts/smoke-test.sh' to verify everything works."
+}
+
+#------------------------------------------------------------------------------
 # Main
 #------------------------------------------------------------------------------
 
@@ -514,7 +591,20 @@ main() {
     # Save state (unless dry run)
     if [[ "${DRY_RUN}" == "false" ]]; then
         save_state
-        show_next_steps
+        
+        # Offer deployment in interactive mode, or run if --deploy was passed
+        if [[ "${CONTINUE_DEPLOY}" == "true" ]]; then
+            run_deployment
+        elif [[ "${NON_INTERACTIVE}" == "false" ]]; then
+            offer_deployment
+            if [[ "${CONTINUE_DEPLOY}" == "true" ]]; then
+                run_deployment
+            else
+                show_next_steps
+            fi
+        else
+            show_next_steps
+        fi
     fi
 }
 
