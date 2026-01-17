@@ -163,15 +163,116 @@ Crossplane is responsible for:
 
 ---
 
+## Quick Start
+
+### 1. Check Prerequisites
+
+```bash
+./scripts/check-prerequisites.sh
+```
+
+Required tools: Docker, kind, kubectl, helm, AWS CLI
+
+### 2. Run the Setup Wizard
+
+```bash
+./scripts/setup.sh
+```
+
+The wizard will:
+- Prompt for your AWS account ID (auto-detected from credentials)
+- Ask for region, resource prefix, and environment name
+- Generate all configuration files
+- Offer to run the full deployment
+
+Or, deploy everything in one command:
+
+```bash
+./scripts/setup.sh --deploy
+```
+
+### 3. Verify Deployment
+
+```bash
+./scripts/smoke-test.sh
+```
+
+### 4. Cleanup
+
+```bash
+./scripts/cleanup.sh
+```
+
+---
+
+## Manual Deployment Steps
+
+For more control, you can run each step manually:
+
+### 1. Configure the Project
+
+```bash
+./scripts/setup.sh
+```
+
+### 2. Create IAM Resources (One-Time)
+
+```bash
+# Create permission boundary
+aws iam create-policy \
+  --policy-name MessageWallRoleBoundary \
+  --policy-document file://platform/iam/messagewall-role-boundary.json
+
+# Create Crossplane user and attach policy
+# See docs/setup-actuator-cluster.md for full instructions
+```
+
+### 3. Bootstrap the Cluster
+
+```bash
+./scripts/bootstrap-kind.sh
+./scripts/bootstrap-crossplane.sh
+./scripts/bootstrap-aws-providers.sh
+```
+
+### 4. Deploy Infrastructure
+
+```bash
+./scripts/deploy-dev.sh
+```
+
+### 5. Finalize Web Application
+
+```bash
+./scripts/finalize-web.sh
+```
+
+This retrieves the Lambda Function URL and updates `index.html`.
+
+### 6. Verify Deployment
+
+```bash
+./scripts/smoke-test.sh
+```
+
+Or manually:
+1. Open the S3 static site URL in a browser
+2. Post a message
+3. Refresh the page and observe updated state
+
+---
+
 ## Deployment Prerequisites
 
 ### Required Tools
 
-- `kubectl`
-- `kind`
+- Docker (running)
+- `kind` - Kubernetes in Docker
+- `kubectl` - Kubernetes CLI
+- `helm` - Kubernetes package manager
 - `aws` CLI (with valid credentials)
-- Docker (for building Lambda artifacts)
-- Python 3.x (for Lambda code)
+
+Run `./scripts/check-prerequisites.sh` to verify.
 
 ### AWS Requirements
 
@@ -182,68 +283,6 @@ Crossplane is responsible for:
   - Lambda functions
   - EventBridge rules
   - IAM roles/policies
-
----
-
-## Deployment Steps
-
-### 1. Create Actuator Cluster
-
-```bash
-scripts/bootstrap-kind.sh
-```
-
-### 2. Install Crossplane and AWS Provider
-
-```bash
-scripts/bootstrap-crossplane.sh
-```
-
-### 3. Build Lambda Artifacts
-
-```bash
-cd app/api-handler && ./build.sh
-cd ../snapshot-writer && ./build.sh
-```
-
-Artifacts will be placed in app/artifacts/.
-
-### 4. Deploy Infrastructure
-
-```bash
-scripts/deploy-dev.sh
-```
-
-This applies Crossplane manifests that create all AWS resources.
-
-### 5. Upload Static Website
-
-```bash
-aws s3 sync app/web s3://<bucket-name>
-```
-
-The bucket name is printed during deployment.
-
-### 6. Verify Deployment
-
-```bash
-scripts/smoke-test.sh
-```
-
-Or manually:
-	1.	Open the S3 static site URL in a browser
-	2.	Post a message
-	3.	Refresh the page and observe updated state
-
-### 7. Cleanup
-
-To remove all resources:
-
-```bash
-scripts/cleanup.sh
-```
-
-This deletes Crossplane-managed resources safely.
 
 ## Extending the Demo
 

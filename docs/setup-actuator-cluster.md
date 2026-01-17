@@ -2,22 +2,76 @@
 
 This guide walks through setting up the Kubernetes actuator cluster with Crossplane and Kyverno. The actuator cluster is responsible for managing AWS resources declaratively.
 
+## Quick Start with Setup Wizard
+
+The fastest way to get started is using the setup wizard:
+
+```bash
+# Run the interactive setup wizard
+./scripts/setup.sh
+
+# Or, run with --deploy to automatically bootstrap and deploy
+./scripts/setup.sh --deploy
+```
+
+The wizard will:
+1. Collect your AWS account ID, region, and naming preferences
+2. Generate all configuration files from templates
+3. Optionally run the full deployment sequence
+
+For manual setup or more control, follow the phases below.
+
 ## Prerequisites
 
+Run the prerequisites checker:
+
+```bash
+./scripts/check-prerequisites.sh
+```
+
+Required tools:
 - Docker Desktop (running)
-- AWS CLI configured with credentials
-- Homebrew (for installing tools)
+- kind
+- kubectl
+- helm
+- AWS CLI (configured with credentials)
 
 ## Overview
 
 The setup consists of four phases:
 
-1. **AWS IAM Setup** - Create the permission boundary and Crossplane user
-2. **Kubernetes Cluster** - Create a local kind cluster
-3. **Crossplane** - Install Crossplane and AWS providers
-4. **Kyverno** - Install policy engine for tag enforcement
+1. **Configuration** - Run setup wizard to generate files
+2. **AWS IAM Setup** - Create the permission boundary and Crossplane user
+3. **Kubernetes Cluster** - Create a local kind cluster with Crossplane
+4. **Deployment** - Deploy the message wall application
 
-## Phase 1: AWS IAM Setup (One-Time)
+## Phase 1: Configuration
+
+```bash
+./scripts/setup.sh
+```
+
+This interactive wizard prompts for:
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| AWS Account ID | Auto-detected | Your 12-digit AWS account ID |
+| AWS Region | us-east-1 | AWS region for resources |
+| Resource Prefix | messagewall | Prefix for all resource names |
+| Environment | dev | Environment name (dev, staging, prod) |
+
+For CI/CD or automation, use non-interactive mode:
+
+```bash
+./scripts/setup.sh \
+  --account-id 123456789012 \
+  --region us-west-2 \
+  --resource-prefix myapp \
+  --environment staging \
+  --non-interactive
+```
+
+## Phase 2: AWS IAM Setup (One-Time)
 
 Before Crossplane can manage AWS resources, you need to create IAM resources that scope its permissions. See [ADR-006](decisions/006-crossplane-and-iam-strategy.md) for the rationale.
 
@@ -37,13 +91,15 @@ aws iam create-policy \
 aws iam create-user --user-name crossplane-actuator
 
 # Create and attach policy
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
 aws iam create-policy \
   --policy-name CrossplaneActuatorPolicy \
   --policy-document file://platform/iam/crossplane-actuator-policy.json
 
 aws iam attach-user-policy \
   --user-name crossplane-actuator \
-  --policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/CrossplaneActuatorPolicy
+  --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/CrossplaneActuatorPolicy
 
 # Generate access keys (save these securely!)
 aws iam create-access-key --user-name crossplane-actuator
@@ -51,7 +107,7 @@ aws iam create-access-key --user-name crossplane-actuator
 
 ### Store Credentials in Kubernetes
 
-After creating the cluster (Phase 2), store the credentials:
+After creating the cluster (Phase 3), store the credentials:
 
 ```bash
 kubectl create secret generic aws-credentials \
@@ -61,102 +117,73 @@ aws_access_key_id = <ACCESS_KEY>
 aws_secret_access_key = <SECRET_KEY>"
 ```
 
-## Phase 2: Create Kubernetes Cluster
+## Phase 3: Create Kubernetes Cluster with Crossplane
 
 ```bash
 ./scripts/bootstrap-kind.sh
-```
-
-This creates a kind cluster named `actuator`. The script is idempotent.
-
-**Verify:**
-```bash
-kubectl cluster-info --context kind-actuator
-kubectl get nodes
-```
-
-## Phase 3: Install Crossplane
-
-```bash
 ./scripts/bootstrap-crossplane.sh
-```
-
-This installs Crossplane using Helm.
-
-**Verify:**
-```bash
-kubectl get pods -n crossplane-system
-```
-
-### Install AWS Providers
-
-```bash
 ./scripts/bootstrap-aws-providers.sh
 ```
-
-This installs the AWS family providers (S3, DynamoDB, Lambda, CloudWatchEvents, IAM) and configures the ProviderConfig.
 
 **Verify:**
 ```bash
 kubectl get providers.pkg.crossplane.io
-kubectl get providerconfig
+# All providers should show INSTALLED=True, HEALTHY=True
 ```
 
-## Phase 4: Install Kyverno
+### Optional: Install Kyverno for Policy Enforcement
 
 ```bash
 ./scripts/bootstrap-kyverno.sh
 ```
 
-This installs Kyverno with:
-- **Fail-open mode** - If Kyverno is unavailable, requests are allowed (demo mode)
-- **Policy reports enabled** - For auditability
+## Phase 4: Deploy the Application
 
-**Verify:**
 ```bash
-kubectl get pods -n kyverno
-kubectl get clusterpolicy
+./scripts/deploy-dev.sh
 ```
 
-### Apply Tag Policies
+This deploys all infrastructure (S3, DynamoDB, Lambda, EventBridge) via Crossplane.
 
-The Kyverno policies are applied automatically, but you can verify:
+### Finalize the Web Application
+
+After deployment, the Lambda Function URL is known. Update the web app:
 
 ```bash
-kubectl get clusterpolicy mutate-aws-resource-tags -o yaml
-kubectl get clusterpolicy validate-aws-resource-tags -o yaml
+./scripts/finalize-web.sh
 ```
 
-## Verification: End-to-End Test
-
-Create a test S3 bucket without tags and verify Kyverno adds them:
+### Verify the Deployment
 
 ```bash
-cat <<EOF | kubectl apply -f -
-apiVersion: s3.aws.upbound.io/v1beta2
-kind: Bucket
-metadata:
-  name: messagewall-test-bucket
-spec:
-  forProvider:
-    region: us-east-1
-  providerConfigRef:
-    name: default
-EOF
+./scripts/smoke-test.sh
 ```
 
-Check that tags were added:
+Or manually:
+1. Open the website URL printed by the deploy script
+2. Post a message
+3. Refresh and verify it appears
+
+## All-in-One Deployment
+
+To run the entire setup and deployment sequence:
 
 ```bash
-kubectl get bucket messagewall-test-bucket -o jsonpath='{.spec.forProvider.tags}' | jq .
+./scripts/setup.sh --deploy
 ```
 
-Expected output includes: `createdBy: crossplane`, `managedBy: messagewall-demo`, `environment: dev`
+Or interactively:
+```bash
+./scripts/setup.sh
+# Answer the prompts, then say "yes" when asked to deploy
+```
 
-Clean up:
+## Cleanup
+
+To remove all AWS resources:
 
 ```bash
-kubectl delete bucket messagewall-test-bucket
+./scripts/cleanup.sh
 ```
 
 ## Troubleshooting
@@ -172,22 +199,32 @@ kubectl logs -n crossplane-system -l pkg.crossplane.io/provider=provider-aws-s3
 
 Check that the IAM policy includes required permissions. The policy may need updates as Crossplane providers evolve. See the `platform/iam/` directory for current policies.
 
-### Kyverno not mutating resources
+### Function URL not found
 
-Check if the policy is ready:
+Wait for all resources to be ready:
 ```bash
-kubectl get clusterpolicy mutate-aws-resource-tags -o jsonpath='{.status.conditions}'
+kubectl get functionurl -w
+```
+
+Then re-run finalize:
+```bash
+./scripts/finalize-web.sh
 ```
 
 ## File Reference
 
 | File | Purpose |
 |------|---------|
+| `scripts/setup.sh` | Configuration wizard |
+| `scripts/check-prerequisites.sh` | Verify required tools |
 | `scripts/bootstrap-kind.sh` | Create kind cluster |
 | `scripts/bootstrap-crossplane.sh` | Install Crossplane |
 | `scripts/bootstrap-aws-providers.sh` | Install AWS providers |
-| `scripts/bootstrap-kyverno.sh` | Install Kyverno |
-| `platform/iam/*.json` | IAM policies |
-| `platform/crossplane/*.yaml` | Provider configuration |
-| `platform/kyverno/values.yaml` | Kyverno Helm values |
-| `platform/kyverno/policies/*.yaml` | Kyverno policies |
+| `scripts/bootstrap-kyverno.sh` | Install Kyverno (optional) |
+| `scripts/deploy-dev.sh` | Deploy infrastructure |
+| `scripts/finalize-web.sh` | Update web app with Function URL |
+| `scripts/smoke-test.sh` | Verify deployment |
+| `scripts/cleanup.sh` | Remove all resources |
+| `scripts/test-setup.sh` | Test suite for wizard |
+| `platform/iam/*.json` | IAM policies (generated) |
+| `infra/base/*.yaml` | Crossplane manifests (generated) |
