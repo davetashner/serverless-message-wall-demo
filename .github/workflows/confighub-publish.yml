@@ -34,8 +34,8 @@ jobs:
 
       - name: Install cub CLI
         run: |
-          curl -fsSL https://get.confighub.com/cub | bash
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          curl -fsSL https://hub.confighub.com/cub/install.sh | bash
+          echo "$HOME/.confighub/bin" >> $GITHUB_PATH
 
       - name: Load environment config
         id: config
