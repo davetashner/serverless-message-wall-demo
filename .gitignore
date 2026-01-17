@@ -17,3 +17,16 @@ scripts/deploy-dev.sh
 
 # Setup wizard state
 .setup-state.json
+
+# Secrets and credentials (never commit these)
+*.secret
+*.credentials
+.env.local
+.env.*.local
+secrets/
+*-secret.json
+*-credentials.json
+
+# ConfigHub rendered files (CI generates these)
+rendered/
+.confighub-rendered/

@@ -1,0 +1,136 @@
+name: Publish to ConfigHub
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/base/**'
+      - 'config/**'
+      - '.github/workflows/confighub-publish.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/base/**'
+      - 'config/**'
+      - '.github/workflows/confighub-publish.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to publish'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+
+jobs:
+  render-and-publish:
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cub CLI
+        run: |
+          curl -fsSL https://get.confighub.com/cub | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Load environment config
+        id: config
+        run: |
+          ENV_FILE="config/${{ github.event.inputs.environment || 'dev' }}.env"
+          if [[ ! -f "$ENV_FILE" ]]; then
+            echo "Error: Config file not found: $ENV_FILE"
+            exit 1
+          fi
+          # Export all variables from the env file
+          set -a
+          source "$ENV_FILE"
+          set +a
+          # Make them available to subsequent steps
+          echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> $GITHUB_OUTPUT
+          echo "AWS_REGION=$AWS_REGION" >> $GITHUB_OUTPUT
+          echo "RESOURCE_PREFIX=$RESOURCE_PREFIX" >> $GITHUB_OUTPUT
+          echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "CONFIGHUB_SPACE=$CONFIGHUB_SPACE" >> $GITHUB_OUTPUT
+
+      - name: Render Crossplane templates
+        run: |
+          mkdir -p rendered
+          export AWS_ACCOUNT_ID="${{ steps.config.outputs.AWS_ACCOUNT_ID }}"
+          export AWS_REGION="${{ steps.config.outputs.AWS_REGION }}"
+          export RESOURCE_PREFIX="${{ steps.config.outputs.RESOURCE_PREFIX }}"
+          export ENVIRONMENT="${{ steps.config.outputs.ENVIRONMENT }}"
+          export BUCKET_NAME="${{ steps.config.outputs.BUCKET_NAME }}"
+
+          for template in infra/base/*.yaml.template; do
+            outfile="rendered/$(basename "${template%.template}")"
+            envsubst '${AWS_ACCOUNT_ID} ${AWS_REGION} ${RESOURCE_PREFIX} ${ENVIRONMENT} ${BUCKET_NAME}' < "$template" > "$outfile"
+            echo "Rendered: $outfile"
+          done
+
+      - name: Authenticate to ConfigHub
+        run: cub auth login --as-worker
+        env:
+          CONFIGHUB_WORKER_ID: ${{ secrets.CONFIGHUB_WORKER_ID }}
+          CONFIGHUB_WORKER_SECRET: ${{ secrets.CONFIGHUB_WORKER_SECRET }}
+
+      - name: Preview changes (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          SPACE="${{ steps.config.outputs.CONFIGHUB_SPACE }}"
+          echo "## ConfigHub Preview" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following units would be updated in space \`$SPACE\`:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          for yaml in rendered/*.yaml; do
+            unit=$(basename "$yaml" .yaml)
+            echo "### Unit: $unit" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Try dry-run update to see what would change
+            if output=$(cub unit update --space "$SPACE" "$unit" "$yaml" --dry-run --verbose 2>&1); then
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "$output" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ Error previewing changes:" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "$output" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Publish to ConfigHub (main only)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          SPACE="${{ steps.config.outputs.CONFIGHUB_SPACE }}"
+          COMMIT_SHA="${{ github.sha }}"
+          COMMIT_MSG=$(git log -1 --pretty=%B | head -1)
+
+          echo "## ConfigHub Publish Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Publishing to space \`$SPACE\` from commit \`${COMMIT_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          for yaml in rendered/*.yaml; do
+            unit=$(basename "$yaml" .yaml)
+            echo "Updating unit: $unit"
+
+            if cub unit update --space "$SPACE" "$unit" "$yaml" \
+                --change-desc "CI: $COMMIT_MSG (${COMMIT_SHA:0:7})" \
+                --wait; then
+              echo "✅ **$unit**: Updated successfully" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **$unit**: Failed to update" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All units published successfully." >> $GITHUB_STEP_SUMMARY
