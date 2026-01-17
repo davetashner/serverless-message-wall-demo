@@ -1,0 +1,137 @@
+# ServerlessEventApp XRD (CompositeResourceDefinition)
+# Defines a single abstraction that composes all 17 AWS resources for the message wall
+#
+# EPIC-11: ServerlessEventApp XRD Implementation
+# See beads/backlog.jsonl for issue tracking
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: serverlesseventapps.messagewall.demo
+spec:
+  group: messagewall.demo
+  names:
+    kind: ServerlessEventApp
+    plural: serverlesseventapps
+  claimNames:
+    kind: ServerlessEventAppClaim
+    plural: serverlesseventappclaims
+
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: ServerlessEventApp configuration
+              required:
+                - environment
+                - awsAccountId
+              properties:
+                awsAccountId:
+                  type: string
+                  description: |
+                    AWS account ID for resource ARNs and globally unique naming.
+                    Used in bucket names, IAM policy ARNs, and permission boundaries.
+                  pattern: "^[0-9]{12}$"
+
+                environment:
+                  type: string
+                  description: |
+                    Deployment environment. Used in resource naming and tagging.
+                    Examples: dev, staging, prod
+                  enum:
+                    - dev
+                    - staging
+                    - prod
+
+                resourcePrefix:
+                  type: string
+                  description: |
+                    Prefix for all AWS resource names. Combined with environment
+                    and account ID for globally unique names.
+                  default: messagewall
+                  pattern: "^[a-z][a-z0-9-]*$"
+
+                region:
+                  type: string
+                  description: AWS region for all resources
+                  default: us-east-1
+                  enum:
+                    - us-east-1
+                    - us-west-2
+                    - eu-west-1
+
+                lambdaMemory:
+                  type: integer
+                  description: Memory allocation for Lambda functions in MB
+                  default: 128
+                  minimum: 128
+                  maximum: 10240
+
+                lambdaTimeout:
+                  type: integer
+                  description: Timeout for Lambda functions in seconds
+                  default: 10
+                  minimum: 1
+                  maximum: 900
+
+                eventSource:
+                  type: string
+                  description: |
+                    EventBridge event source identifier. Used in event patterns
+                    to match MessagePosted events from the API handler.
+                  default: messagewall.api-handler
+
+                artifactBucket:
+                  type: string
+                  description: |
+                    S3 bucket for Lambda artifacts. If empty, uses the app bucket.
+                    Useful for sharing artifacts across environments.
+                  default: ""
+
+            status:
+              type: object
+              description: Observed state of the ServerlessEventApp
+              properties:
+                websiteEndpoint:
+                  type: string
+                  description: S3 static website URL
+
+                apiEndpoint:
+                  type: string
+                  description: Lambda Function URL for the API handler
+
+                bucketName:
+                  type: string
+                  description: Name of the S3 bucket
+
+                tableName:
+                  type: string
+                  description: Name of the DynamoDB table
+
+                ready:
+                  type: boolean
+                  description: Whether all resources are ready
+
+                message:
+                  type: string
+                  description: Human-readable status message
+
+      additionalPrinterColumns:
+        - name: Environment
+          type: string
+          jsonPath: .spec.environment
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: API Endpoint
+          type: string
+          jsonPath: .status.apiEndpoint
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

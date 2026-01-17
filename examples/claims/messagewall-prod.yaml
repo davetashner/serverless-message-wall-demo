@@ -1,0 +1,34 @@
+# ServerlessEventApp Claim for prod environment
+# Deploys all 17 AWS resources for the message wall demo
+#
+# This example shows production settings with:
+#   - Higher Lambda memory for better performance
+#   - Longer timeout for reliability
+#
+# Prerequisites:
+#   - MessageWallRoleBoundary IAM policy must exist in AWS
+#   - Lambda artifacts must be uploaded to S3 (artifacts/api-handler.zip, artifacts/snapshot-writer.zip)
+#
+# Usage:
+#   kubectl apply -f messagewall-prod.yaml
+#   kubectl get serverlesseventappclaim messagewall-prod -w
+#
+# Verify:
+#   kubectl get managed -l crossplane.io/claim-name=messagewall-prod
+---
+apiVersion: messagewall.demo/v1alpha1
+kind: ServerlessEventAppClaim
+metadata:
+  name: messagewall-prod
+  namespace: default
+spec:
+  # Required fields
+  environment: prod
+  awsAccountId: "123456789012"  # Replace with your AWS account ID
+
+  # Production settings
+  resourcePrefix: messagewall
+  region: us-east-1
+  lambdaMemory: 256    # Higher memory for production
+  lambdaTimeout: 30    # Longer timeout for reliability
+  eventSource: messagewall.api-handler

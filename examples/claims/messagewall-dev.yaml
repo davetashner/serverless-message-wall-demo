@@ -1,0 +1,31 @@
+# ServerlessEventApp Claim for dev environment
+# Deploys all 17 AWS resources for the message wall demo
+#
+# Prerequisites:
+#   - MessageWallRoleBoundary IAM policy must exist in AWS
+#   - Lambda artifacts must be uploaded to S3 (artifacts/api-handler.zip, artifacts/snapshot-writer.zip)
+#
+# Usage:
+#   kubectl apply -f messagewall-dev.yaml
+#   kubectl get serverlesseventappclaim messagewall-dev -w
+#
+# Verify:
+#   kubectl get managed -l crossplane.io/claim-name=messagewall-dev
+---
+apiVersion: messagewall.demo/v1alpha1
+kind: ServerlessEventAppClaim
+metadata:
+  name: messagewall-dev
+  namespace: default
+spec:
+  # Required fields
+  environment: dev
+  awsAccountId: "123456789012"  # Replace with your AWS account ID
+
+  # Optional fields with defaults shown
+  resourcePrefix: messagewall
+  region: us-east-1
+  lambdaMemory: 128
+  lambdaTimeout: 10
+  eventSource: messagewall.api-handler
+  # artifactBucket: ""  # Uses app bucket if not specified

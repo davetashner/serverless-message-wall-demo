@@ -1,0 +1,728 @@
+# ServerlessEventApp AWS Composition
+# Composes 17 AWS managed resources for the message wall demo
+#
+# EPIC-11: ServerlessEventApp XRD Implementation
+# See beads/backlog.jsonl for issue tracking
+#
+# Resource Stages:
+#   Stage 1: S3 Bucket, DynamoDB Table, 2 IAM Roles (no dependencies)
+#   Stage 2: 5 S3 configs, 2 IAM Policies, 2 Lambda Functions (depend on Stage 1)
+#   Stage 3: FunctionURL, EventBridge Rule/Target/Permission (depend on Stage 2)
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: serverlesseventapp-aws
+  labels:
+    provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: messagewall.demo/v1alpha1
+    kind: ServerlessEventApp
+
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          # ============================================================
+          # STAGE 1: Base Resources (no dependencies)
+          # ============================================================
+
+          # --- S3 Bucket ---
+          - name: bucket
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta2
+              kind: Bucket
+              spec:
+                forProvider:
+                  region: us-east-1
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-%s"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.annotations[crossplane.io/external-name]
+                toFieldPath: status.bucketName
+
+          # --- DynamoDB Table ---
+          - name: table
+            base:
+              apiVersion: dynamodb.aws.upbound.io/v1beta2
+              kind: Table
+              spec:
+                forProvider:
+                  region: us-east-1
+                  billingMode: PAY_PER_REQUEST
+                  hashKey: PK
+                  rangeKey: SK
+                  attribute:
+                    - name: PK
+                      type: S
+                    - name: SK
+                      type: S
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-%s"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.annotations[crossplane.io/external-name]
+                toFieldPath: status.tableName
+
+          # --- API Handler IAM Role ---
+          - name: api-role
+            base:
+              apiVersion: iam.aws.upbound.io/v1beta1
+              kind: Role
+              metadata:
+                labels:
+                  role: api-handler
+              spec:
+                forProvider:
+                  assumeRolePolicy: |
+                    {
+                      "Version": "2012-10-17",
+                      "Statement": [
+                        {
+                          "Effect": "Allow",
+                          "Principal": {
+                            "Service": "lambda.amazonaws.com"
+                          },
+                          "Action": "sts:AssumeRole"
+                        }
+                      ]
+                    }
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: "%s-api-role"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "arn:aws:iam::%s:policy/MessageWallRoleBoundary"
+                toFieldPath: spec.forProvider.permissionsBoundary
+
+          # --- Snapshot Writer IAM Role ---
+          - name: snapshot-role
+            base:
+              apiVersion: iam.aws.upbound.io/v1beta1
+              kind: Role
+              metadata:
+                labels:
+                  role: snapshot-writer
+              spec:
+                forProvider:
+                  assumeRolePolicy: |
+                    {
+                      "Version": "2012-10-17",
+                      "Statement": [
+                        {
+                          "Effect": "Allow",
+                          "Principal": {
+                            "Service": "lambda.amazonaws.com"
+                          },
+                          "Action": "sts:AssumeRole"
+                        }
+                      ]
+                    }
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: "%s-snapshot-role"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "arn:aws:iam::%s:policy/MessageWallRoleBoundary"
+                toFieldPath: spec.forProvider.permissionsBoundary
+
+          # ============================================================
+          # STAGE 2: Dependent Resources
+          # ============================================================
+
+          # --- S3 Bucket Ownership Controls ---
+          - name: bucket-ownership
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketOwnershipControls
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  rule:
+                    - objectOwnership: BucketOwnerEnforced
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+
+          # --- S3 Bucket Public Access Block ---
+          - name: bucket-public-access
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketPublicAccessBlock
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  blockPublicAcls: false
+                  blockPublicPolicy: false
+                  ignorePublicAcls: false
+                  restrictPublicBuckets: false
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+
+          # --- S3 Bucket Website Configuration ---
+          - name: bucket-website
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketWebsiteConfiguration
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  indexDocument:
+                    - suffix: index.html
+                  errorDocument:
+                    - key: error.html
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.websiteEndpoint
+                toFieldPath: status.websiteEndpoint
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "http://%s"
+
+          # --- S3 Bucket CORS Configuration ---
+          - name: bucket-cors
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketCorsConfiguration
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                  corsRule:
+                    - allowedHeaders:
+                        - "*"
+                      allowedMethods:
+                        - GET
+                        - POST
+                      allowedOrigins:
+                        - "*"
+                      exposeHeaders:
+                        - ETag
+                      maxAgeSeconds: 3000
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+
+          # --- S3 Bucket Policy ---
+          - name: bucket-policy
+            base:
+              apiVersion: s3.aws.upbound.io/v1beta1
+              kind: BucketPolicy
+              spec:
+                forProvider:
+                  region: us-east-1
+                  bucketSelector:
+                    matchControllerRef: true
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                          {
+                            "Sid": "PublicReadGetObject",
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:GetObject",
+                            "Resource": "arn:aws:s3:::%s-%s-%s/*"
+                          }
+                        ]
+                      }
+                toFieldPath: spec.forProvider.policy
+
+          # --- API Handler IAM Role Policy ---
+          - name: api-role-policy
+            base:
+              apiVersion: iam.aws.upbound.io/v1beta1
+              kind: RolePolicy
+              spec:
+                forProvider:
+                  roleSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      role: api-handler
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                          {
+                            "Sid": "DynamoDBAccess",
+                            "Effect": "Allow",
+                            "Action": [
+                              "dynamodb:GetItem",
+                              "dynamodb:PutItem",
+                              "dynamodb:UpdateItem",
+                              "dynamodb:Query"
+                            ],
+                            "Resource": "arn:aws:dynamodb:%s:%s:table/%s-*"
+                          },
+                          {
+                            "Sid": "EventBridgeAccess",
+                            "Effect": "Allow",
+                            "Action": "events:PutEvents",
+                            "Resource": "*"
+                          },
+                          {
+                            "Sid": "CloudWatchLogsAccess",
+                            "Effect": "Allow",
+                            "Action": [
+                              "logs:CreateLogGroup",
+                              "logs:CreateLogStream",
+                              "logs:PutLogEvents"
+                            ],
+                            "Resource": "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*:*"
+                          }
+                        ]
+                      }
+                toFieldPath: spec.forProvider.policy
+
+          # --- Snapshot Writer IAM Role Policy ---
+          - name: snapshot-role-policy
+            base:
+              apiVersion: iam.aws.upbound.io/v1beta1
+              kind: RolePolicy
+              spec:
+                forProvider:
+                  roleSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      role: snapshot-writer
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                          {
+                            "Sid": "DynamoDBReadAccess",
+                            "Effect": "Allow",
+                            "Action": [
+                              "dynamodb:GetItem",
+                              "dynamodb:Query"
+                            ],
+                            "Resource": "arn:aws:dynamodb:%s:%s:table/%s-*"
+                          },
+                          {
+                            "Sid": "S3WriteAccess",
+                            "Effect": "Allow",
+                            "Action": [
+                              "s3:PutObject"
+                            ],
+                            "Resource": "arn:aws:s3:::%s-*/state.json"
+                          },
+                          {
+                            "Sid": "CloudWatchLogsAccess",
+                            "Effect": "Allow",
+                            "Action": [
+                              "logs:CreateLogGroup",
+                              "logs:CreateLogStream",
+                              "logs:PutLogEvents"
+                            ],
+                            "Resource": "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*:*"
+                          }
+                        ]
+                      }
+                toFieldPath: spec.forProvider.policy
+
+          # --- API Handler Lambda Function ---
+          - name: api-handler
+            base:
+              apiVersion: lambda.aws.upbound.io/v1beta1
+              kind: Function
+              metadata:
+                labels:
+                  function: api-handler
+              spec:
+                forProvider:
+                  region: us-east-1
+                  runtime: python3.12
+                  handler: handler.handler
+                  memorySize: 128
+                  timeout: 10
+                  s3Key: artifacts/api-handler.zip
+                  roleSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      role: api-handler
+                  environment:
+                    - variables:
+                        EVENT_BUS_NAME: default
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.lambdaMemory
+                toFieldPath: spec.forProvider.memorySize
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.lambdaTimeout
+                toFieldPath: spec.forProvider.timeout
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: "%s-api-handler"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              # Use artifact bucket if specified, otherwise use app bucket
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-%s"
+                toFieldPath: spec.forProvider.s3Bucket
+              # Set TABLE_NAME environment variable
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-%s"
+                toFieldPath: spec.forProvider.environment[0].variables.TABLE_NAME
+
+          # --- Snapshot Writer Lambda Function ---
+          - name: snapshot-writer
+            base:
+              apiVersion: lambda.aws.upbound.io/v1beta1
+              kind: Function
+              metadata:
+                labels:
+                  function: snapshot-writer
+              spec:
+                forProvider:
+                  region: us-east-1
+                  runtime: python3.12
+                  handler: handler.handler
+                  memorySize: 128
+                  timeout: 10
+                  s3Key: artifacts/snapshot-writer.zip
+                  roleSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      role: snapshot-writer
+                  environment:
+                    - variables: {}
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.lambdaMemory
+                toFieldPath: spec.forProvider.memorySize
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.lambdaTimeout
+                toFieldPath: spec.forProvider.timeout
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: "%s-snapshot-writer"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              # Use artifact bucket if specified, otherwise use app bucket
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-%s"
+                toFieldPath: spec.forProvider.s3Bucket
+              # Set TABLE_NAME environment variable
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-%s"
+                toFieldPath: spec.forProvider.environment[0].variables.TABLE_NAME
+              # Set BUCKET_NAME environment variable
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.environment
+                    - fromFieldPath: spec.awsAccountId
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-%s"
+                toFieldPath: spec.forProvider.environment[0].variables.BUCKET_NAME
+
+          # ============================================================
+          # STAGE 3: Resources depending on Lambda Functions
+          # ============================================================
+
+          # --- Lambda Function URL ---
+          - name: function-url
+            base:
+              apiVersion: lambda.aws.upbound.io/v1beta1
+              kind: FunctionURL
+              spec:
+                forProvider:
+                  region: us-east-1
+                  functionNameSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      function: api-handler
+                  authorizationType: NONE
+                  cors:
+                    - allowCredentials: false
+                      allowHeaders:
+                        - "*"
+                      allowMethods:
+                        - "*"
+                      allowOrigins:
+                        - "*"
+                      maxAge: 3600
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.functionUrl
+                toFieldPath: status.apiEndpoint
+
+          # --- EventBridge Rule ---
+          - name: eventbridge-rule
+            base:
+              apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
+              kind: Rule
+              spec:
+                forProvider:
+                  region: us-east-1
+                  eventBusName: default
+                  eventPattern: |
+                    {
+                      "source": ["messagewall.api-handler"],
+                      "detail-type": ["MessagePosted"]
+                    }
+                  state: ENABLED
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: "%s-snapshot-trigger"
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              # Update event pattern with custom eventSource if specified
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.eventSource
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "source": ["%s"],
+                        "detail-type": ["MessagePosted"]
+                      }
+                toFieldPath: spec.forProvider.eventPattern
+
+          # --- EventBridge Target ---
+          - name: eventbridge-target
+            base:
+              apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
+              kind: Target
+              spec:
+                forProvider:
+                  region: us-east-1
+                  eventBusName: default
+                  ruleSelector:
+                    matchControllerRef: true
+                  targetId: snapshot-writer
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: "arn:aws:lambda:%s:%s:function:%s-snapshot-writer"
+                toFieldPath: spec.forProvider.arn
+
+          # --- Lambda Permission for EventBridge ---
+          - name: eventbridge-permission
+            base:
+              apiVersion: lambda.aws.upbound.io/v1beta1
+              kind: Permission
+              spec:
+                forProvider:
+                  region: us-east-1
+                  action: lambda:InvokeFunction
+                  functionNameSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      function: snapshot-writer
+                  principal: events.amazonaws.com
+                  statementId: AllowEventBridgeInvoke
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
+                    - fromFieldPath: spec.resourcePrefix
+                  strategy: string
+                  string:
+                    fmt: "arn:aws:events:%s:%s:rule/%s-snapshot-trigger"
+                toFieldPath: spec.forProvider.sourceArn
+
