@@ -15,7 +15,13 @@ The workflow (`.github/workflows/confighub-publish.yml`) does:
 
 ## Setup Steps
 
-### 1. Create a ConfigHub Worker for CI
+### 1. Install cub CLI (if needed)
+
+```bash
+curl -fsSL https://hub.confighub.com/cub/install.sh | bash
+```
+
+### 2. Create a ConfigHub Worker for CI
 
 Workers are service accounts for automation. Create one for GitHub Actions:
 
@@ -29,16 +35,16 @@ cub worker get-secret --space messagewall-dev github-ci
 
 This outputs the worker ID and secret. **Save these immediately** - the secret cannot be retrieved again.
 
-### 2. Add GitHub Secrets
+### 3. Add GitHub Secrets
 
 Go to your repository's **Settings > Secrets and variables > Actions** and add:
 
 | Secret Name | Value |
 |-------------|-------|
 | `CONFIGHUB_WORKER_ID` | The worker ID from step 1 |
-| `CONFIGHUB_WORKER_SECRET` | The worker secret from step 1 |
+| `CONFIGHUB_WORKER_SECRET` | The worker secret from step 2 |
 
-### 3. Verify Setup
+### 4. Verify Setup
 
 Create a PR that modifies any file in `infra/base/` or `config/`. The workflow should:
 1. Render the templates
