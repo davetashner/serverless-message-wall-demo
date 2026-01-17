@@ -3,6 +3,9 @@
 
 ---
 
+## Why?
+This is a small but real serverless system to explore how configuration authority, schemas, Crossplane actuation, and human–agent boundaries should work together—especially for irreversible actions like destroying production data. The goal isn’t the app; it’s learning how to design self-healing infrastructure/application platforms that remain safe, understandable, and governable as automation and AI scale.
+
 ## Overview
 
 `serverless-message-wall-demo` is a **simple, event-driven serverless application** designed to be:
