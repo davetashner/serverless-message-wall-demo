@@ -149,7 +149,7 @@ cat platform/iam/messagewall-role-boundary.json | jq .
 **Key Point:**
 > "If Crossplane is compromised, the attacker can only affect messagewall resources. They cannot create admin roles or access other parts of AWS."
 
-### Part 4: Looking Ahead - ConfigHub Integration (2-3 min)
+### Part 4: Looking Ahead - ConfigHub Integration (5-10 min)
 
 > "This is the foundation. The next step is ConfigHub integration."
 
@@ -166,6 +166,33 @@ Git (authoring) → Render CRDs → ConfigHub (authoritative) → Actuator → A
 5. Changes can be made in ConfigHub and flow to AWS
 
 > "This enables bulk configuration changes, policy enforcement at the config layer, and a complete audit trail."
+
+**Bulk Change Demo (Optional Extension):**
+
+> "Imagine security mandates a new environment variable on all Lambda functions. Traditionally, you'd edit 50 files and create a massive PR. With ConfigHub:"
+
+```bash
+# Find all Lambda functions
+ch unit list --where "kind=Function AND apiVersion contains lambda"
+
+# Preview the change (without applying)
+ch fn set-env-var --var SECURITY_LOG_ENDPOINT --value "https://security.internal/ingest" \
+  --where "kind=Function" --dry-run
+
+# Apply to dev first, then promote to prod after validation
+ch changeset create "security-logging" --description "SEC-2024-001"
+ch fn set-env-var --var SECURITY_LOG_ENDPOINT --value "https://security.internal/ingest" \
+  --where "kind=Function AND environment=dev" --changeset "security-logging"
+```
+
+**Key Points:**
+- **Find then fix**: Query by any attribute, modify in bulk
+- **Preview before apply**: See exactly what will change with `--dry-run`
+- **Staged rollouts**: Apply to dev first, validate, then production
+- **Approval gates**: Require human approval for high-risk changes
+- **Full audit trail**: Every change is attributed and timestamped
+
+> See `docs/bulk-changes-and-change-management.md` for detailed scenarios and risk mitigation strategies.
 
 ---
 
@@ -239,3 +266,5 @@ Standard IAM policies say what a user CAN do. Permission boundaries cap what rol
 | Crossplane Setup | `platform/crossplane/*.yaml` |
 | Bootstrap Scripts | `scripts/bootstrap-*.sh` |
 | Architecture Decisions | `docs/decisions/*.md` |
+| Bulk Changes & Risk Mitigation | `docs/bulk-changes-and-change-management.md` |
+| ConfigHub Integration | `docs/decisions/005-confighub-integration-architecture.md` |

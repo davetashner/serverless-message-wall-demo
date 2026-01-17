@@ -4,7 +4,9 @@
 Accepted
 
 ## Context
-ConfigHub (confighub.com) is an external tool that stores fully-rendered Kubernetes manifests as data with a queryable/mutatable API. We want to integrate ConfigHub into the deployment flow so that:
+ConfigHub (confighub.com) is a configuration management platform that stores fully-rendered Kubernetes manifests as queryable, mutable data. Unlike template-based systems, ConfigHub treats "configuration as data" — you can find resources by attribute, modify them in bulk, and track every change.
+
+We want to integrate ConfigHub into the deployment flow so that:
 - ConfigHub becomes the authoritative source of truth for resolved configuration
 - The Kubernetes actuator receives manifests from ConfigHub, not directly from Git
 - Policy enforcement and bulk changes happen in ConfigHub before actuation
@@ -28,15 +30,41 @@ Kubernetes Actuator (pulls/receives from ConfigHub)
 AWS Resources (managed by Crossplane)
 ```
 
+### ConfigHub Primitives Used
+
+| Primitive | How We Use It |
+|-----------|--------------|
+| **Space** | One space per environment (dev, staging, prod) |
+| **Unit** | One unit per Crossplane managed resource (Lambda, S3, DynamoDB, etc.) |
+| **Revision** | Every change creates a new revision with full history |
+| **ChangeSet** | Groups related changes (e.g., "security-patch-2024-01") |
+| **Function** | Bulk operations like `set-env-var`, `set-container-resources` |
+| **Trigger** | Approval gates before applying to production |
+
+### Bulk Change Workflow
+
+```
+1. Query: ch unit list --where "kind=Function AND environment=prod"
+2. Preview: ch fn set-env-var --var X --value Y --dry-run
+3. Bundle: ch changeset create "reason-for-change"
+4. Modify: ch fn set-env-var --var X --value Y --changeset "reason"
+5. Validate: ch fn vet-schemas --changeset "reason"
+6. Approve: ch changeset request-approval --approvers "team"
+7. Apply: ch changeset apply --target actuator-cluster
+```
+
 ## Rationale
 - Git remains the authoring surface for developers
 - Rendering happens in CI, producing fully-resolved manifests (no placeholders)
 - ConfigHub holds the authoritative resolved configuration, enabling:
-  - Policy checks before apply
-  - Bulk configuration changes via API
-  - Audit trail of all changes
-  - Drift detection between intended and actual state
+  - **Queryability**: Find all resources matching criteria (e.g., all Lambdas with memorySize < 256)
+  - **Bulk mutation**: Change many resources with one command
+  - **Validation functions**: Run policy checks before apply
+  - **Approval triggers**: Require human approval for high-risk changes
+  - **Audit trail**: Every change is attributed, timestamped, and linked to a changeset
+  - **Rollback**: Revert to any previous revision instantly
 - Kubernetes actuator only applies what ConfigHub approves
+- Crossplane provides continuous reconciliation (drift correction)
 
 ## Open Questions
 - **Actuation mechanism**: ConfigHub may use ArgoCD to push manifests to the actuator cluster, or the actuator may pull from ConfigHub. This will be clarified in EPIC-8 implementation.
@@ -46,3 +74,7 @@ AWS Resources (managed by Crossplane)
 - Actuator cluster needs connectivity to ConfigHub
 - Direct `kubectl apply` from CI is prohibited for ConfigHub-managed resources
 - Break-glass procedures must reconcile back to ConfigHub after emergency changes
+
+## Related Documents
+- `docs/bulk-changes-and-change-management.md` - Detailed scenarios and risk mitigation
+- `docs/demo-guide.md` - Demo talking points including ConfigHub section

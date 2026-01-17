@@ -249,13 +249,19 @@ This deletes Crossplane-managed resources safely.
 
 This demo is intentionally designed to evolve.
 
-Possible next steps:
-	•	Add ConfigHub to manage resolved configuration
-	•	Enforce IAM and security policies
-	•	Demonstrate bulk configuration changes
-	•	Add multiple environments (dev / stage / prod)
-	•	Add CloudFront or WAF
-	•	Add drift detection and reconciliation
+### Documented Extensions
+
+- **Bulk Configuration Changes**: See `docs/bulk-changes-and-change-management.md` for detailed scenarios including security patching, risk mitigation strategies, and change management procedures
+- **ConfigHub Integration**: See `docs/decisions/005-confighub-integration-architecture.md` for how ConfigHub fits into the deployment flow
+
+### Future Extensions
+
+- Add ConfigHub to manage resolved configuration
+- Enforce IAM and security policies at the config layer
+- Demonstrate bulk configuration changes via ConfigHub functions
+- Add multiple environments (dev / stage / prod)
+- Add CloudFront or WAF
+- Add drift detection and reconciliation
 
 ## Why This Demo Exists
 
