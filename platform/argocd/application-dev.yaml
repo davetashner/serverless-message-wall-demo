@@ -27,8 +27,14 @@ spec:
     namespace: default
 
   # Sync policy
+  # NOTE: Auto-sync is enabled but the CMP plugin only fetches LiveRevisionNum
+  # content from ConfigHub (see cmp-plugin.yaml). This means:
+  # - CI can push new revisions (HeadRevisionNum advances)
+  # - ArgoCD won't sync until 'cub unit apply' promotes them (LiveRevisionNum advances)
+  # - This enables controlled rollout: push → review → promote → sync
+  # See ISSUE-8.6 for the controlled rollout design.
   syncPolicy:
-    # Automated sync: continuously reconcile ConfigHub -> Kubernetes
+    # Automated sync: continuously reconcile ConfigHub Live revisions -> Kubernetes
     automated:
       # Remove resources from cluster when deleted from ConfigHub
       prune: true

@@ -229,6 +229,52 @@ cub unit history --space messagewall-dev lambda
 
 > See `docs/bulk-changes-and-change-management.md` for detailed scenarios and risk mitigation strategies.
 
+### Part 5: Controlled Rollout of Revisions (5-10 min)
+
+> "What if you want to push changes but NOT deploy them immediately?"
+
+**Explain HeadRevisionNum vs LiveRevisionNum:**
+> "ConfigHub tracks two revision numbers for each unit:"
+> 1. **HeadRevisionNum** - The latest revision (what CI just pushed)
+> 2. **LiveRevisionNum** - The deployed revision (what's running in Kubernetes)
+
+**Run the Controlled Rollout Demo:**
+```bash
+./scripts/demo-revision-rollout.sh
+```
+
+This interactive demo shows:
+1. Current state: Head and Live may already differ
+2. Creating a change: `cub unit update` advances Head only
+3. Verifying separation: Head changed, Live unchanged, Kubernetes unchanged
+4. Reviewing pending changes: `cub unit diff` shows what would deploy
+5. Promoting: `cub unit apply` advances Live
+6. ArgoCD syncs: Only Live content reaches Kubernetes
+
+**Key Commands:**
+```bash
+# See revision state for all units
+cub unit list --space messagewall-dev --columns Unit.Slug,Unit.HeadRevisionNum,Unit.LiveRevisionNum
+
+# See pending changes (Live vs Head)
+cub unit diff --space messagewall-dev lambda
+
+# Promote a specific unit
+cub unit apply --space messagewall-dev lambda
+
+# Promote all units with pending changes
+cub unit apply --space messagewall-dev --where "HeadRevisionNum > LiveRevisionNum"
+```
+
+**What This Enables:**
+- **Staged rollouts**: Push to dev, validate, then promote to prod
+- **Emergency holds**: Stop promotion during incidents
+- **Change review**: See exactly what will deploy before promoting
+- **Audit trail**: Track who promoted what and when
+
+**How ArgoCD Works with This:**
+> "ArgoCD auto-sync is enabled, but the ConfigHub CMP plugin only fetches LiveRevisionNum content. This means CI can push freely without affecting Kubernetes until someone explicitly promotes."
+
 ---
 
 ## Quick Reference Commands
@@ -304,4 +350,5 @@ Standard IAM policies say what a user CAN do. Permission boundaries cap what rol
 | Bulk Changes & Risk Mitigation | `docs/bulk-changes-and-change-management.md` |
 | ConfigHub Integration | `docs/decisions/005-confighub-integration-architecture.md` |
 | **Bulk Change Demo Script** | `scripts/demo-bulk-change.sh` |
+| **Controlled Rollout Demo** | `scripts/demo-revision-rollout.sh` |
 | ArgoCD + ConfigHub Sync | `docs/decisions/009-argocd-confighub-sync.md`, `platform/argocd/` |

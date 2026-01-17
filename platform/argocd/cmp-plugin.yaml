@@ -38,7 +38,10 @@ data:
             fi
             cub auth login --as-worker
 
-      # Generate: fetch all units from ConfigHub space and output as YAML
+      # Generate: fetch all units from ConfigHub space at their LiveRevisionNum
+      # This ensures ArgoCD only syncs configuration that has been explicitly
+      # promoted via 'cub unit apply', not just any revision pushed to ConfigHub.
+      # See ISSUE-8.6 for the controlled rollout design.
       generate:
         command: ["/bin/sh", "-c"]
         args:
@@ -54,8 +57,13 @@ data:
               exit 0
             fi
 
-            # List all units in the space and fetch their content
-            for unit in $(cub unit list --space "$CONFIGHUB_SPACE" --output names 2>/dev/null); do
-              cub unit get --space "$CONFIGHUB_SPACE" "$unit" --output yaml 2>/dev/null
-              echo "---"
+            # Fetch each unit's content at its LiveRevisionNum (not HeadRevisionNum)
+            # This ensures only promoted revisions are synced to Kubernetes.
+            # Units with LiveRevisionNum=0 have never been applied and are skipped.
+            cub unit list --space "$CONFIGHUB_SPACE" --no-header \
+              --columns Unit.Slug,Unit.LiveRevisionNum 2>/dev/null | while read -r unit live_rev; do
+              if [ -n "$unit" ] && [ -n "$live_rev" ] && [ "$live_rev" != "0" ]; then
+                cub revision get --space "$CONFIGHUB_SPACE" --data-only "$unit" "$live_rev" 2>/dev/null
+                echo "---"
+              fi
             done
