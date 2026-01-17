@@ -7,23 +7,23 @@
 apiVersion: lambda.aws.upbound.io/v1beta1
 kind: Function
 metadata:
-  name: messagewall-api-handler
+  name: ${RESOURCE_PREFIX}-api-handler
   annotations:
-    crossplane.io/external-name: messagewall-api-handler
+    crossplane.io/external-name: ${RESOURCE_PREFIX}-api-handler
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     runtime: python3.12
     handler: handler.handler
     memorySize: 128
     timeout: 10
-    s3Bucket: messagewall-demo-dev
+    s3Bucket: ${BUCKET_NAME}
     s3Key: artifacts/api-handler.zip
     roleRef:
-      name: messagewall-api-role
+      name: ${RESOURCE_PREFIX}-api-role
     environment:
       - variables:
-          TABLE_NAME: messagewall-demo-dev
+          TABLE_NAME: ${BUCKET_NAME}
           EVENT_BUS_NAME: default
   providerConfigRef:
     name: default
@@ -31,23 +31,23 @@ spec:
 apiVersion: lambda.aws.upbound.io/v1beta1
 kind: Function
 metadata:
-  name: messagewall-snapshot-writer
+  name: ${RESOURCE_PREFIX}-snapshot-writer
   annotations:
-    crossplane.io/external-name: messagewall-snapshot-writer
+    crossplane.io/external-name: ${RESOURCE_PREFIX}-snapshot-writer
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     runtime: python3.12
     handler: handler.handler
     memorySize: 128
     timeout: 10
-    s3Bucket: messagewall-demo-dev
+    s3Bucket: ${BUCKET_NAME}
     s3Key: artifacts/snapshot-writer.zip
     roleRef:
-      name: messagewall-snapshot-role
+      name: ${RESOURCE_PREFIX}-snapshot-role
     environment:
       - variables:
-          TABLE_NAME: messagewall-demo-dev
-          BUCKET_NAME: messagewall-demo-dev
+          TABLE_NAME: ${BUCKET_NAME}
+          BUCKET_NAME: ${BUCKET_NAME}
   providerConfigRef:
     name: default

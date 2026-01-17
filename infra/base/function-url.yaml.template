@@ -5,12 +5,12 @@
 apiVersion: lambda.aws.upbound.io/v1beta1
 kind: FunctionURL
 metadata:
-  name: messagewall-api-handler-url
+  name: ${RESOURCE_PREFIX}-api-handler-url
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     functionNameRef:
-      name: messagewall-api-handler
+      name: ${RESOURCE_PREFIX}-api-handler
     authorizationType: NONE
     cors:
       - allowCredentials: false

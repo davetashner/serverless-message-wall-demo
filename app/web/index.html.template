@@ -177,7 +177,7 @@
     </div>
 
     <script>
-        const API_URL = 'https://fbp4pzl2vql5gbqyneyaas4tvq0grxvd.lambda-url.us-east-1.on.aws/';
+        const API_URL = '${API_URL}';
         const STATE_URL = 'state.json';
 
         async function loadMessages() {

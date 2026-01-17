@@ -5,12 +5,12 @@
 apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
 kind: Rule
 metadata:
-  name: messagewall-snapshot-trigger
+  name: ${RESOURCE_PREFIX}-snapshot-trigger
   annotations:
-    crossplane.io/external-name: messagewall-snapshot-trigger
+    crossplane.io/external-name: ${RESOURCE_PREFIX}-snapshot-trigger
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     eventBusName: default
     eventPattern: |
       {
@@ -25,15 +25,15 @@ spec:
 apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
 kind: Target
 metadata:
-  name: messagewall-snapshot-target
+  name: ${RESOURCE_PREFIX}-snapshot-target
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     eventBusName: default
     ruleRef:
-      name: messagewall-snapshot-trigger
+      name: ${RESOURCE_PREFIX}-snapshot-trigger
     targetId: snapshot-writer
-    arn: arn:aws:lambda:us-east-1:205074708100:function:messagewall-snapshot-writer
+    arn: arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${RESOURCE_PREFIX}-snapshot-writer
   providerConfigRef:
     name: default
 ---
@@ -41,15 +41,15 @@ spec:
 apiVersion: lambda.aws.upbound.io/v1beta1
 kind: Permission
 metadata:
-  name: messagewall-eventbridge-invoke-snapshot
+  name: ${RESOURCE_PREFIX}-eventbridge-invoke-snapshot
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     action: lambda:InvokeFunction
     functionNameRef:
-      name: messagewall-snapshot-writer
+      name: ${RESOURCE_PREFIX}-snapshot-writer
     principal: events.amazonaws.com
-    sourceArn: arn:aws:events:us-east-1:205074708100:rule/messagewall-snapshot-trigger
+    sourceArn: arn:aws:events:${AWS_REGION}:${AWS_ACCOUNT_ID}:rule/${RESOURCE_PREFIX}-snapshot-trigger
     statementId: AllowEventBridgeInvoke
   providerConfigRef:
     name: default

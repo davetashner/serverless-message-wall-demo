@@ -1,20 +1,19 @@
 # S3 Bucket for static website hosting and Lambda artifacts
 # See ADR-002 (S3 Static Website Hosting) and ADR-003 (Lambda Artifact Storage)
 #
-# IMPORTANT: S3 bucket names must be globally unique. If 'messagewall-demo-dev'
-# is already taken, change it to something unique (e.g., messagewall-demo-dev-yourname)
-# and update all references in this file.
+# Bucket name is generated as: ${RESOURCE_PREFIX}-${ENVIRONMENT}-${AWS_ACCOUNT_ID}
+# This ensures global uniqueness while remaining predictable.
 ---
 apiVersion: s3.aws.upbound.io/v1beta2
 kind: Bucket
 metadata:
-  name: messagewall-demo-bucket
+  name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket
   annotations:
     # Use a fixed bucket name for predictability and policy references
-    crossplane.io/external-name: messagewall-demo-dev
+    crossplane.io/external-name: ${BUCKET_NAME}
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
   providerConfigRef:
     name: default
 ---
@@ -22,12 +21,12 @@ spec:
 apiVersion: s3.aws.upbound.io/v1beta1
 kind: BucketOwnershipControls
 metadata:
-  name: messagewall-demo-bucket-ownership
+  name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket-ownership
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     bucketRef:
-      name: messagewall-demo-bucket
+      name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket
     rule:
       - objectOwnership: BucketOwnerEnforced
   providerConfigRef:
@@ -37,12 +36,12 @@ spec:
 apiVersion: s3.aws.upbound.io/v1beta1
 kind: BucketPublicAccessBlock
 metadata:
-  name: messagewall-demo-bucket-public-access
+  name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket-public-access
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     bucketRef:
-      name: messagewall-demo-bucket
+      name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket
     blockPublicAcls: false
     blockPublicPolicy: false
     ignorePublicAcls: false
@@ -54,12 +53,12 @@ spec:
 apiVersion: s3.aws.upbound.io/v1beta1
 kind: BucketWebsiteConfiguration
 metadata:
-  name: messagewall-demo-bucket-website
+  name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket-website
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     bucketRef:
-      name: messagewall-demo-bucket
+      name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket
     indexDocument:
       - suffix: index.html
     errorDocument:
@@ -71,12 +70,12 @@ spec:
 apiVersion: s3.aws.upbound.io/v1beta1
 kind: BucketCorsConfiguration
 metadata:
-  name: messagewall-demo-bucket-cors
+  name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket-cors
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     bucketRef:
-      name: messagewall-demo-bucket
+      name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket
     corsRule:
       - allowedHeaders:
           - "*"
@@ -96,12 +95,12 @@ spec:
 apiVersion: s3.aws.upbound.io/v1beta1
 kind: BucketPolicy
 metadata:
-  name: messagewall-demo-bucket-policy
+  name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket-policy
 spec:
   forProvider:
-    region: us-east-1
+    region: ${AWS_REGION}
     bucketRef:
-      name: messagewall-demo-bucket
+      name: ${RESOURCE_PREFIX}-${ENVIRONMENT}-bucket
     policy: |
       {
         "Version": "2012-10-17",
@@ -111,7 +110,7 @@ spec:
             "Effect": "Allow",
             "Principal": "*",
             "Action": "s3:GetObject",
-            "Resource": "arn:aws:s3:::messagewall-demo-dev/*"
+            "Resource": "arn:aws:s3:::${BUCKET_NAME}/*"
           }
         ]
       }

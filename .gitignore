@@ -1,1 +1,19 @@
 .DS_Store
+
+# Generated files from setup wizard (see ADR-008)
+# These are created by envsubst from .template files
+infra/base/iam.yaml
+infra/base/eventbridge.yaml
+infra/base/lambda.yaml
+infra/base/s3.yaml
+infra/base/dynamodb.yaml
+infra/base/function-url.yaml
+app/web/index.html
+platform/iam/crossplane-actuator-policy.json
+platform/iam/messagewall-role-boundary.json
+scripts/cleanup.sh
+scripts/smoke-test.sh
+scripts/deploy-dev.sh
+
+# Setup wizard state
+.setup-state.json

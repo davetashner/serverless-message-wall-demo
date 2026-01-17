@@ -9,7 +9,7 @@
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-*:*"
+      "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*:*"
     },
     {
       "Sid": "DynamoDBAccess",
@@ -22,7 +22,7 @@
         "dynamodb:Scan",
         "dynamodb:UpdateItem"
       ],
-      "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-*"
+      "Resource": "arn:aws:dynamodb:${AWS_REGION}:${AWS_ACCOUNT_ID}:table/${RESOURCE_PREFIX}-*"
     },
     {
       "Sid": "EventBridgeAccess",
@@ -40,8 +40,8 @@
         "s3:PutObject"
       ],
       "Resource": [
-        "arn:aws:s3:::messagewall-*",
-        "arn:aws:s3:::messagewall-*/*"
+        "arn:aws:s3:::${RESOURCE_PREFIX}-*",
+        "arn:aws:s3:::${RESOURCE_PREFIX}-*/*"
       ]
     }
   ]

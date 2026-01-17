@@ -12,7 +12,7 @@
         "logs:TagLogGroup",
         "logs:UntagLogGroup"
       ],
-      "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-*"
+      "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*"
     },
     {
       "Sid": "DynamoDBManagement",
@@ -30,7 +30,7 @@
         "dynamodb:UpdateTable",
         "dynamodb:UpdateTimeToLive"
       ],
-      "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-*"
+      "Resource": "arn:aws:dynamodb:${AWS_REGION}:${AWS_ACCOUNT_ID}:table/${RESOURCE_PREFIX}-*"
     },
     {
       "Sid": "EventBridgeManagement",
@@ -48,7 +48,7 @@
         "events:TagResource",
         "events:UntagResource"
       ],
-      "Resource": "arn:aws:events:us-east-1:205074708100:rule/messagewall-*"
+      "Resource": "arn:aws:events:${AWS_REGION}:${AWS_ACCOUNT_ID}:rule/${RESOURCE_PREFIX}-*"
     },
     {
       "Sid": "IAMBoundaryRead",
@@ -57,13 +57,13 @@
         "iam:GetPolicy",
         "iam:GetPolicyVersion"
       ],
-      "Resource": "arn:aws:iam::205074708100:policy/MessageWallRoleBoundary"
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/MessageWallRoleBoundary"
     },
     {
       "Sid": "IAMPassRole",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::205074708100:role/messagewall-*",
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${RESOURCE_PREFIX}-*",
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": "lambda.amazonaws.com"
@@ -82,7 +82,7 @@
         "iam:TagRole",
         "iam:UntagRole"
       ],
-      "Resource": "arn:aws:iam::205074708100:role/messagewall-*"
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${RESOURCE_PREFIX}-*"
     },
     {
       "Sid": "IAMRoleManagement",
@@ -96,10 +96,10 @@
         "iam:PutRolePolicy",
         "iam:UpdateRole"
       ],
-      "Resource": "arn:aws:iam::205074708100:role/messagewall-*",
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${RESOURCE_PREFIX}-*",
       "Condition": {
         "StringEquals": {
-          "iam:PermissionsBoundary": "arn:aws:iam::205074708100:policy/MessageWallRoleBoundary"
+          "iam:PermissionsBoundary": "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/MessageWallRoleBoundary"
         }
       }
     },
@@ -127,7 +127,7 @@
         "lambda:UpdateFunctionConfiguration",
         "lambda:UpdateFunctionUrlConfig"
       ],
-      "Resource": "arn:aws:lambda:us-east-1:205074708100:function:messagewall-*"
+      "Resource": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${RESOURCE_PREFIX}-*"
     },
     {
       "Sid": "S3Management",
@@ -140,8 +140,8 @@
         "s3:Put*"
       ],
       "Resource": [
-        "arn:aws:s3:::messagewall-*",
-        "arn:aws:s3:::messagewall-*/*"
+        "arn:aws:s3:::${RESOURCE_PREFIX}-*",
+        "arn:aws:s3:::${RESOURCE_PREFIX}-*/*"
       ]
     }
   ]

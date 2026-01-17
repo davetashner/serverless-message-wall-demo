@@ -2,16 +2,16 @@
 # See ADR-006 for IAM strategy and permission boundary requirements
 #
 # All roles must have MessageWallRoleBoundary permission boundary attached.
-# This ensures Lambda functions can only access messagewall-* resources.
+# This ensures Lambda functions can only access ${RESOURCE_PREFIX}-* resources.
 ---
 # API Handler Lambda execution role
 # Permissions: DynamoDB read/write, EventBridge PutEvents, CloudWatch Logs
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: Role
 metadata:
-  name: messagewall-api-role
+  name: ${RESOURCE_PREFIX}-api-role
   annotations:
-    crossplane.io/external-name: messagewall-api-role
+    crossplane.io/external-name: ${RESOURCE_PREFIX}-api-role
 spec:
   forProvider:
     assumeRolePolicy: |
@@ -27,7 +27,7 @@ spec:
           }
         ]
       }
-    permissionsBoundary: arn:aws:iam::205074708100:policy/MessageWallRoleBoundary
+    permissionsBoundary: arn:aws:iam::${AWS_ACCOUNT_ID}:policy/MessageWallRoleBoundary
   providerConfigRef:
     name: default
 ---
@@ -35,11 +35,11 @@ spec:
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: RolePolicy
 metadata:
-  name: messagewall-api-role-policy
+  name: ${RESOURCE_PREFIX}-api-role-policy
 spec:
   forProvider:
     roleRef:
-      name: messagewall-api-role
+      name: ${RESOURCE_PREFIX}-api-role
     policy: |
       {
         "Version": "2012-10-17",
@@ -53,7 +53,7 @@ spec:
               "dynamodb:UpdateItem",
               "dynamodb:Query"
             ],
-            "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-*"
+            "Resource": "arn:aws:dynamodb:${AWS_REGION}:${AWS_ACCOUNT_ID}:table/${RESOURCE_PREFIX}-*"
           },
           {
             "Sid": "EventBridgeAccess",
@@ -69,7 +69,7 @@ spec:
               "logs:CreateLogStream",
               "logs:PutLogEvents"
             ],
-            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-*:*"
+            "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*:*"
           }
         ]
       }
@@ -81,9 +81,9 @@ spec:
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: Role
 metadata:
-  name: messagewall-snapshot-role
+  name: ${RESOURCE_PREFIX}-snapshot-role
   annotations:
-    crossplane.io/external-name: messagewall-snapshot-role
+    crossplane.io/external-name: ${RESOURCE_PREFIX}-snapshot-role
 spec:
   forProvider:
     assumeRolePolicy: |
@@ -99,7 +99,7 @@ spec:
           }
         ]
       }
-    permissionsBoundary: arn:aws:iam::205074708100:policy/MessageWallRoleBoundary
+    permissionsBoundary: arn:aws:iam::${AWS_ACCOUNT_ID}:policy/MessageWallRoleBoundary
   providerConfigRef:
     name: default
 ---
@@ -107,11 +107,11 @@ spec:
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: RolePolicy
 metadata:
-  name: messagewall-snapshot-role-policy
+  name: ${RESOURCE_PREFIX}-snapshot-role-policy
 spec:
   forProvider:
     roleRef:
-      name: messagewall-snapshot-role
+      name: ${RESOURCE_PREFIX}-snapshot-role
     policy: |
       {
         "Version": "2012-10-17",
@@ -123,7 +123,7 @@ spec:
               "dynamodb:GetItem",
               "dynamodb:Query"
             ],
-            "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-*"
+            "Resource": "arn:aws:dynamodb:${AWS_REGION}:${AWS_ACCOUNT_ID}:table/${RESOURCE_PREFIX}-*"
           },
           {
             "Sid": "S3WriteAccess",
@@ -131,7 +131,7 @@ spec:
             "Action": [
               "s3:PutObject"
             ],
-            "Resource": "arn:aws:s3:::messagewall-*/state.json"
+            "Resource": "arn:aws:s3:::${RESOURCE_PREFIX}-*/state.json"
           },
           {
             "Sid": "CloudWatchLogsAccess",
@@ -141,7 +141,7 @@ spec:
               "logs:CreateLogStream",
               "logs:PutLogEvents"
             ],
-            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-*:*"
+            "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*:*"
           }
         ]
       }
