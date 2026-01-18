@@ -21,15 +21,65 @@
 | Risk Class | Approval | Delay | Rationale |
 |------------|----------|-------|-----------|
 | **LOW** | No | 5 min auto-apply | Safe; human can override during window |
-| **MEDIUM** | No | 1 hour + notify | Warrants awareness; operator can intervene |
+| **MEDIUM** | **Acknowledge** | 4 hour window | Warrants visibility; must confirm awareness |
 | **HIGH** | **Yes** | Blocked | Outage/data loss potential; explicit decision required |
+
+---
+
+## MEDIUM Risk: Acknowledgment Requirement
+
+### The Problem
+
+The original MEDIUM design (1-hour auto-approve + notification) provides **illusory safety**:
+- Operators may ignore notifications (alarm fatigue)
+- Auto-approve proceeds regardless of whether anyone looked
+- No audit trail of who saw what
+- "Notify and hope" is not a control
+
+### Alternatives Evaluated
+
+| Approach | Pros | Cons | Verdict |
+|----------|------|------|---------|
+| **A. Require acknowledgment** | Forces visibility, lighter than approval, audit trail | Could become rubber-stamp | **Selected** |
+| **B. Require full approval** | Simpler model, clear safety | Increases approval fatigue, may be overkill | Rejected |
+| **C. Time-of-day routing** | Matches human availability | Complex, timezone issues | Rejected |
+| **D. Post-apply mandatory review** | Doesn't block velocity | Too late for some issues | Rejected |
+
+### Decision: Require Acknowledgment
+
+MEDIUM risk changes require **acknowledgment** (not approval):
+
+1. **Proposal created** → Operators notified immediately
+2. **4-hour window** → Any operator can acknowledge ("I've seen this")
+3. **Acknowledgment received** → Auto-apply proceeds
+4. **No acknowledgment in 4h** → Escalate to secondary on-call
+5. **No acknowledgment in 8h** → Treat as HIGH (require approval)
+
+**Key difference from approval**: Acknowledgment confirms visibility, not judgment. The operator is saying "I'm aware this is happening" not "I endorse this change."
+
+### Why This Works
+
+- **Addresses alarm fatigue**: Can't auto-apply without someone engaging
+- **Lighter than approval**: No approve/reject decision required
+- **Audit trail**: Records who acknowledged and when
+- **Escalation path**: Unacknowledged changes don't silently apply
+- **Preserves velocity**: Most MEDIUM changes apply within hours, not days
+
+### Acknowledgment vs Approval
+
+| Aspect | Acknowledgment (MEDIUM) | Approval (HIGH) |
+|--------|-------------------------|-----------------|
+| Question | "Did you see this?" | "Should we do this?" |
+| Decision | None required | Approve or reject |
+| Accountability | Visibility confirmed | Judgment exercised |
+| Escalation | 4h → secondary, 8h → HIGH | 4h → secondary, 7d → expire |
 
 ---
 
 ## Approval Workflow
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph "1. Proposal"
         A[Agent/CI] --> B[Create Proposal]
     end
@@ -41,30 +91,41 @@ flowchart LR
 
     subgraph "3. Routing"
         D --> E{Risk Class}
-        E -->|LOW| F[Auto-apply queue]
-        E -->|MEDIUM| G[Notify + auto-apply]
-        E -->|HIGH| H[Approval required]
+        E -->|LOW| F[5 min queue]
+        E -->|MEDIUM| G[Await acknowledgment]
+        E -->|HIGH| H[Await approval]
     end
 
-    subgraph "4. Decision"
+    subgraph "4a. MEDIUM Path"
+        G --> G1{Acknowledged<br/>within 4h?}
+        G1 -->|Yes| G2[Record ack]
+        G1 -->|No| G3[Escalate]
+        G3 --> G4{Ack within 8h?}
+        G4 -->|Yes| G2
+        G4 -->|No| H
+    end
+
+    subgraph "4b. HIGH Path"
         H --> I[Notify approvers]
-        I --> J{Review}
-        J -->|Approve| K[Record decision]
-        J -->|Reject| L[Record + close]
+        I --> J{Decision}
+        J -->|Approve| K[Record approval]
+        J -->|Reject| L[Rejected]
     end
 
     subgraph "5. Application"
         F --> M[Apply to ConfigHub]
-        G --> M
+        G2 --> M
         K --> M
         M --> N[Sync to Actuator]
     end
 
     style L fill:#f66
     style N fill:#6f6
+    style G2 fill:#ff6
+    style K fill:#6f6
 ```
 
-*Figure: Approval workflow from proposal through risk-based routing to application.*
+*Figure: Approval workflow showing LOW (auto-apply), MEDIUM (acknowledgment), and HIGH (approval) paths.*
 
 ---
 

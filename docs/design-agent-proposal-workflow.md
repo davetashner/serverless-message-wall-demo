@@ -79,16 +79,16 @@ flowchart TD
     subgraph "Risk-Based Routing"
         F --> G{Risk Class?}
         G -->|LOW| H[Queue: 5 min delay]
-        G -->|MEDIUM| I[Queue: 1 hr + notify ops]
-        G -->|HIGH| J[Queue: Awaiting approval]
+        G -->|MEDIUM| I[Await acknowledgment]
+        G -->|HIGH| J[Await approval]
     end
 
     subgraph Resolution
         H -->|No override| K[Auto-Approve]
-        I -->|No intervention| K
-        J -->|Approver decision| L{Decision?}
-        L -->|Approve| K
-        L -->|Reject| M[REJECTED: With reason]
+        I -->|Acknowledged| K
+        I -->|No ack 8h| J
+        J -->|Approve| K
+        J -->|Reject| M[REJECTED: With reason]
         K --> N[Apply to ConfigHub]
         N --> O[APPLIED]
     end
@@ -99,11 +99,11 @@ flowchart TD
     style O fill:#6f6
 ```
 
-*Figure: Proposal lifecycle from creation through risk-based routing to resolution.*
+*Figure: Proposal lifecycle from creation through risk-based routing to resolution. MEDIUM requires acknowledgment; unacknowledged escalates to HIGH.*
 
 **Pending behavior by risk**:
 - LOW: Auto-approve after 5 min (human can override)
-- MEDIUM: Notify operators, auto-approve after 1 hour
+- MEDIUM: Require acknowledgment within 4h; escalate to HIGH if unacknowledged after 8h
 - HIGH: No auto-approve; explicit approval required
 
 ---
@@ -127,11 +127,11 @@ Proposals are classified per [risk-taxonomy.md](risk-taxonomy.md). Classificatio
 2. Get highest base risk from field mapping
 3. Apply elevators (prod, deletion, cross-account)
 
-| Risk Class | Notification | Auto-Approve | Approval Required |
-|------------|--------------|--------------|-------------------|
-| LOW | Optional | Yes (5 min) | No |
-| MEDIUM | Immediate | Yes (1 hour) | No |
-| HIGH | Immediate | No | Yes |
+| Risk Class | Notification | Acknowledgment | Approval Required |
+|------------|--------------|----------------|-------------------|
+| LOW | Optional | No | No (auto-apply 5 min) |
+| MEDIUM | Immediate | **Yes** (4h window) | No (after ack) |
+| HIGH | Immediate | N/A | **Yes** |
 
 ---
 

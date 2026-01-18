@@ -40,14 +40,26 @@ Human approval works only when: reviewable (< 2 min), expert approver, focused a
 
 | # | Mitigation | Effect |
 |---|------------|--------|
-| 1 | **Risk-based filtering** | LOW/MEDIUM auto-approve → ~80% volume reduction |
-| 2 | **Confidence-based escalation** | Low-confidence agents escalate to human |
-| 3 | **Anomaly detection** | Flag unusual proposals (size, fields, proposer) |
-| 4 | **Sampling and audit** | Random 10% deep review for statistical assurance |
-| 5 | **Rate limiting** | Prevent agent swarms (e.g., 10/hour, 3 HIGH/day) |
-| 6 | **Mandatory justification** | Require reason; slow rubber-stamping |
+| 1 | **Risk-based filtering** | LOW auto-approves; MEDIUM/HIGH require human action |
+| 2 | **Acknowledgment for MEDIUM** | Forces visibility without full approval overhead (see below) |
+| 3 | **Confidence-based escalation** | Low-confidence agents escalate to human |
+| 4 | **Anomaly detection** | Flag unusual proposals (size, fields, proposer) |
+| 5 | **Sampling and audit** | Random 10% deep review for statistical assurance |
+| 6 | **Rate limiting** | Prevent agent swarms (e.g., 10/hour, 3 HIGH/day) |
 | 7 | **Cooling-off periods** | HIGH risk visible 4h before approval allowed |
 | 8 | **Machine-verifiable invariants** | Formal guarantees > human judgment |
+
+### MEDIUM Risk: Acknowledgment (Not Auto-Approve)
+
+The original MEDIUM design (1-hour auto-approve + notification) was identified as **illusory safety**—operators may ignore notifications, and auto-approve proceeds regardless of whether anyone looked.
+
+**Updated design**: MEDIUM requires **acknowledgment** before auto-apply:
+- Operator must confirm "I've seen this" (not approve/reject)
+- 4-hour window before escalation
+- Unacknowledged changes escalate to HIGH after 8 hours
+- Creates audit trail of visibility
+
+This addresses alarm fatigue without adding full approval overhead. See [design-approval-gates.md](design-approval-gates.md) for details.
 
 **Key insight**: Whenever safety can be expressed as a machine-checkable rule, prefer invariant enforcement over human approval.
 

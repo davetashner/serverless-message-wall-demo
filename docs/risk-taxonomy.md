@@ -118,7 +118,7 @@ flowchart TD
 
     K --> L{Final Risk Class}
     L -->|LOW| M[Auto-apply 5 min]
-    L -->|MEDIUM| N[Notify + auto-apply 1 hr]
+    L -->|MEDIUM| N[Require acknowledgment]
     L -->|HIGH| O[Require approval]
 
     style M fill:#6f6
@@ -133,7 +133,7 @@ flowchart TD
 | Change | Base | Elevators | Effective | Action |
 |--------|------|-----------|-----------|--------|
 | `lambdaMemory` 128→256 in dev | LOW | none | LOW | Auto-apply |
-| `lambdaMemory` 256→512 in prod | LOW | prod +1 | MEDIUM | Apply + notify |
+| `lambdaMemory` 256→512 in prod | LOW | prod +1 | MEDIUM | Acknowledge + apply |
 | `region` change in prod | MEDIUM | prod +1 | HIGH | Approval required |
 | Delete dev Claim | — | deletion | HIGH | Approval required |
 | New prod Claim | MEDIUM | prod +1 | HIGH | Approval required |
