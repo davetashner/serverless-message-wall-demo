@@ -215,6 +215,8 @@ CODEOWNERS controls who can approve.
 
 ## References
 
-- [risk-taxonomy.md](risk-taxonomy.md), [design-agent-proposal-workflow.md](design-agent-proposal-workflow.md)
+- [risk-taxonomy.md](risk-taxonomy.md) — **Canonical source** for risk class definitions and field mapping
+- [design-agent-proposal-workflow.md](design-agent-proposal-workflow.md) — **Canonical source** for proposal lifecycle
+- [machine-verifiable-invariants.md](machine-verifiable-invariants.md) — Invariant enforcement (complements approval)
 - [invariants.md](invariants.md) — Invariant 9
 - EPIC-17 — Production protection gates

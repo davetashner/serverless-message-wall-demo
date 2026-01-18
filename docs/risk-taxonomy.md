@@ -179,14 +179,102 @@ Change → Policy Check → [FAIL: blocked] or [PASS] → Risk Assessment → LO
 
 ---
 
+## Compound Change Risk Classification
+
+### The Problem
+
+The naive "highest risk wins" approach is insufficient:
+
+| Change | Naive Result | Actual Risk | Why |
+|--------|--------------|-------------|-----|
+| 5 LOW fields in dev | LOW | **MEDIUM** | Cumulative blast radius |
+| `lambdaMemory` + `lambdaTimeout` in prod | MEDIUM | MEDIUM | Related fields, single concern |
+| `region` + `resourcePrefix` + `artifactBucket` | HIGH | **HIGH** | Multiple unrelated HIGH-impact fields |
+| `lambdaMemory` in 10 Claims | LOW per claim | **HIGH** | Fleet-wide change |
+
+### Approaches Evaluated
+
+| Approach | How It Works | Pros | Cons | Verdict |
+|----------|--------------|------|------|---------|
+| **A. Field count threshold** | ≥3 fields → elevate +1 | Simple | Ignores field relationships | Rejected |
+| **B. Cumulative scoring** | LOW=1, MED=2, HIGH=4; sum and threshold | Nuanced | Complex, magic numbers | Rejected |
+| **C. Concern-based grouping** | Related fields = 1 concern; unrelated = elevate | Semantic | Requires field relationship map | **Selected** |
+| **D. Batch scope multiplier** | Multi-resource batches elevate | Catches fleet changes | Needs batch detection | Selected (additive) |
+
+### Decision: Concern-Based + Batch Scope
+
+**Rule 1: Concern-based grouping**
+Fields are grouped by concern. Changing multiple fields in the same concern = single risk. Changing fields across concerns = elevate.
+
+| Concern | Fields |
+|---------|--------|
+| Compute | `lambdaMemory`, `lambdaTimeout` |
+| Identity | `awsAccountId`, `resourcePrefix` |
+| Location | `region` |
+| Source | `artifactBucket`, `eventSource` |
+| Lifecycle | `environment` |
+
+**Elevation rule**: Changing fields in **2+ unrelated concerns** → elevate +1 level.
+
+**Rule 2: Batch scope multiplier**
+Changes affecting multiple resources in a single operation:
+
+| Batch Size | Effect |
+|------------|--------|
+| 1 resource | No change |
+| 2-5 resources | Elevate +1 |
+| 6+ resources | Elevate to HIGH |
+
+### Updated Algorithm
+
+```
+1. Group changed fields by concern
+2. Base risk = highest risk of any changed field
+3. If 2+ concerns touched → elevate +1
+4. If batch size 2-5 → elevate +1
+5. If batch size 6+ → set to HIGH
+6. Apply context elevators (prod, deletion, cross-account)
+7. Cap at HIGH
+```
+
+### Examples with Compound Rules
+
+| Change | Fields | Concerns | Base | Compound | Elevators | Final |
+|--------|--------|----------|------|----------|-----------|-------|
+| Memory + timeout in dev | 2 | 1 (Compute) | LOW | LOW | — | LOW |
+| Memory + region in dev | 2 | 2 | MEDIUM | **MEDIUM+1=HIGH** | — | HIGH |
+| Memory in 3 prod Claims | 1×3 | 1 | LOW | **+1 batch** | +1 prod | HIGH |
+| Prefix + region + bucket | 3 | 3 | HIGH | HIGH (capped) | — | HIGH |
+
+---
+
 ## Open Questions
 
 | Question | Status | Notes |
 |----------|--------|-------|
 | Risk computed vs declared? | Start computed | Fall back to declared for ambiguous cases |
-| Multi-change batches? | Highest risk wins | See ISSUE-20.4 for compound risk design |
+| Compound risk? | **Resolved** | Concern-based grouping + batch multiplier (see above) |
 | Approval delegation? | Deferred | See ISSUE-15.14 (machine-verifiable invariants) |
 | Time-based modifiers? | Deferred | May contribute to approval fatigue |
+
+---
+
+## Canonical Locations (EPIC-15 Consolidation)
+
+This document is the **authoritative source** for risk classification. Other EPIC-15 docs reference but do not redefine these concepts:
+
+| Concept | Canonical Location | Referenced By |
+|---------|-------------------|---------------|
+| Risk class definitions (LOW/MEDIUM/HIGH) | This document | All EPIC-15 docs |
+| Schema field risk mapping | This document | proposal-workflow, approval-gates |
+| Context elevators (prod, deletion) | This document | proposal-workflow |
+| Compound risk calculation | This document | — |
+| Approval workflow mechanics | [design-approval-gates.md](design-approval-gates.md) | proposal-workflow, fatigue |
+| Acknowledgment vs approval | [design-approval-gates.md](design-approval-gates.md) | fatigue |
+| Proposal lifecycle | [design-agent-proposal-workflow.md](design-agent-proposal-workflow.md) | approval-gates |
+| Policy vs approval distinction | [design-approval-gates.md](design-approval-gates.md) | invariants |
+| Invariant enforcement | [machine-verifiable-invariants.md](machine-verifiable-invariants.md) | approval-gates, fatigue |
+| Approval fatigue mitigations | [approval-fatigue-and-theater.md](approval-fatigue-and-theater.md) | — |
 
 ---
 

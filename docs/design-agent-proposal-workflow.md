@@ -197,5 +197,6 @@ proposals reject proposal-abc123 --reason "..."    # Reject
 
 ## References
 
-- [risk-taxonomy.md](risk-taxonomy.md) — Risk class definitions
+- [risk-taxonomy.md](risk-taxonomy.md) — **Canonical source** for risk classes, field mapping, elevators, compound risk
+- [design-approval-gates.md](design-approval-gates.md) — **Canonical source** for approval/acknowledgment workflow details
 - [ADR-011](decisions/011-ci-confighub-authority-conflict.md), [ADR-010](decisions/010-confighub-claim-vs-expanded.md) — Architecture decisions

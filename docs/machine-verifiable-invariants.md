@@ -136,6 +136,8 @@ Document all invariants in a central registry with test cases.
 
 ## References
 
-- [approval-fatigue-and-theater.md](approval-fatigue-and-theater.md)
-- [invariants.md](invariants.md), [demo-policy-guardrails.md](demo-policy-guardrails.md)
+- [risk-taxonomy.md](risk-taxonomy.md) — **Canonical source** for risk classes (this doc covers invariants only)
+- [design-approval-gates.md](design-approval-gates.md) — **Canonical source** for policy vs approval distinction
+- [approval-fatigue-and-theater.md](approval-fatigue-and-theater.md) — Why invariants matter for fatigue
+- [invariants.md](invariants.md), [demo-policy-guardrails.md](demo-policy-guardrails.md) — Platform invariants
 - EPIC-14 — Policy implementation

@@ -97,5 +97,6 @@ Human approval works only when: low volume, comprehensible changes, engaged appr
 
 ## References
 
-- [design-approval-gates.md](design-approval-gates.md), [risk-taxonomy.md](risk-taxonomy.md)
-- [machine-verifiable-invariants.md](machine-verifiable-invariants.md) (ISSUE-15.14)
+- [design-approval-gates.md](design-approval-gates.md) — Canonical source for approval workflow
+- [risk-taxonomy.md](risk-taxonomy.md) — Canonical source for risk classes and acknowledgment behavior
+- [machine-verifiable-invariants.md](machine-verifiable-invariants.md) — Invariant enforcement details
