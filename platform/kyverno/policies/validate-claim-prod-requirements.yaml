@@ -1,0 +1,101 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-claim-prod-requirements
+  annotations:
+    policies.kyverno.io/title: Production Environment Requirements
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Enforces stricter requirements for production ServerlessEventApp Claims.
+      Production workloads need higher resource allocations for reliability.
+      See ISSUE-14.2 and ISSUE-14.5 for details.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # Prod requires minimum Lambda memory of 256 MB
+    - name: prod-lambda-memory-minimum
+      match:
+        any:
+          - resources:
+              kinds:
+                - messagewall.demo/*/ServerlessEventAppClaim
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.environment }}"
+            operator: Equals
+            value: "prod"
+      validate:
+        message: >-
+          Production Claims must have lambdaMemory >= 256 MB.
+          Current value: {{ request.object.spec.lambdaMemory || '128 (default)' }}.
+          Production workloads need sufficient memory for traffic spikes and cold starts.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.lambdaMemory || `128` }}"
+                operator: LessThan
+                value: 256
+
+    # Prod requires minimum Lambda timeout of 30 seconds
+    - name: prod-lambda-timeout-minimum
+      match:
+        any:
+          - resources:
+              kinds:
+                - messagewall.demo/*/ServerlessEventAppClaim
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.environment }}"
+            operator: Equals
+            value: "prod"
+      validate:
+        message: >-
+          Production Claims must have lambdaTimeout >= 30 seconds.
+          Current value: {{ request.object.spec.lambdaTimeout || '10 (default)' }}.
+          Production workloads need sufficient timeout for cold starts under load.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.lambdaTimeout || `10` }}"
+                operator: LessThan
+                value: 30
+
+    # Global upper bound sanity check (defense in depth with XRD schema)
+    - name: lambda-memory-upper-bound
+      match:
+        any:
+          - resources:
+              kinds:
+                - messagewall.demo/*/ServerlessEventAppClaim
+      validate:
+        message: >-
+          Lambda memory cannot exceed 3008 MB for this demo.
+          Current value: {{ request.object.spec.lambdaMemory }}.
+          Higher values require explicit approval.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.lambdaMemory || `128` }}"
+                operator: GreaterThan
+                value: 3008
+
+    # Global timeout sanity check
+    - name: lambda-timeout-upper-bound
+      match:
+        any:
+          - resources:
+              kinds:
+                - messagewall.demo/*/ServerlessEventAppClaim
+      validate:
+        message: >-
+          Lambda timeout cannot exceed 300 seconds (5 minutes) for this demo.
+          Current value: {{ request.object.spec.lambdaTimeout }}.
+          Longer timeouts require explicit approval.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.lambdaTimeout || `10` }}"
+                operator: GreaterThan
+                value: 300

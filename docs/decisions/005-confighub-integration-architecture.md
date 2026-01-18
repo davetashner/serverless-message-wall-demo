@@ -69,11 +69,46 @@ AWS Resources (managed by Crossplane)
 ## Open Questions
 - **Actuation mechanism**: ConfigHub may use ArgoCD to push manifests to the actuator cluster, or the actuator may pull from ConfigHub. This will be clarified in EPIC-8 implementation.
 
+## Policy Enforcement (Defense in Depth)
+
+Policies run at multiple enforcement points to catch violations early and provide defense in depth:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  CI / Pre-commit          │  Earliest feedback (optional)              │
+│  (OPA / conftest)         │  Catch obvious violations before merge     │
+├───────────────────────────┼─────────────────────────────────────────────┤
+│  ConfigHub                │  Authority layer enforcement               │
+│  (OPA policies)           │  Block violations before apply             │
+├───────────────────────────┼─────────────────────────────────────────────┤
+│  Kyverno                  │  Actuation layer enforcement               │
+│  (Admission control)      │  Final gate before Kubernetes accepts      │
+└───────────────────────────┴─────────────────────────────────────────────┘
+```
+
+**Why multiple layers?**
+
+1. **Fail fast**: CI catches violations before they reach ConfigHub, saving time
+2. **Defense in depth**: If one layer misses a violation, another catches it
+3. **Different visibility**: ConfigHub policies see Claims; Kyverno sees expanded resources
+4. **Break-glass safety**: Kyverno enforces policies even during emergency direct-apply
+
+**Same policy, different contexts**:
+- ConfigHub validates the Claim (e.g., "prod Claims must have lambdaMemory >= 256")
+- Kyverno validates expanded resources (e.g., "all Lambda resources must have required tags")
+
+Some policies may be duplicated across layers intentionally. This is acceptable because:
+- The cost of duplication is low (policies are declarative)
+- The cost of a missed violation is high (security risk, compliance failure)
+
+See [ADR-007: Kyverno Policy Enforcement](./007-kyverno-policy-enforcement.md) for Kyverno-specific policies.
+
 ## Consequences
 - CI pipeline must render and publish to ConfigHub (not directly to cluster)
 - Actuator cluster needs connectivity to ConfigHub
 - Direct `kubectl apply` from CI is prohibited for ConfigHub-managed resources
 - Break-glass procedures must reconcile back to ConfigHub after emergency changes
+- Policies should be evaluated at multiple layers for defense in depth
 
 ## Related Documents
 - `docs/bulk-changes-and-change-management.md` - Detailed scenarios and risk mitigation

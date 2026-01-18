@@ -189,6 +189,52 @@ See [ADR-005](decisions/005-confighub-integration.md) for the full ConfigHub int
 
 ---
 
+## Cross-Cutting Concern: Policy Enforcement
+
+Policy enforcement is unique—it spans multiple planes rather than belonging to just one. This is intentional: defense in depth means catching violations at every opportunity.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  INTENT PLANE            │  Pre-commit hooks (optional)                │
+│                          │  OPA/conftest validates templates           │
+├──────────────────────────┼──────────────────────────────────────────────┤
+│  AUTHORITY PLANE         │  ConfigHub policy checks                    │
+│                          │  OPA validates Claims before apply          │
+├──────────────────────────┼──────────────────────────────────────────────┤
+│  ACTUATION PLANE         │  Kyverno admission control                  │
+│                          │  Validates/mutates resources at admission   │
+└──────────────────────────┴──────────────────────────────────────────────┘
+```
+
+### Why Policies Run at Multiple Layers
+
+| Layer | What It Sees | Why It Matters |
+|-------|--------------|----------------|
+| **Intent (CI)** | Templates, Claims | Fail fast before merge; developer feedback |
+| **Authority (ConfigHub)** | Resolved Claims | Block before actuation; audit trail |
+| **Actuation (Kyverno)** | Expanded resources | Final gate; catches break-glass violations |
+
+### Policy Duplication is Acceptable
+
+Some policies intentionally exist in multiple layers:
+- **Required tags**: Validated in ConfigHub (Claim-level) and Kyverno (resource-level)
+- **IAM restrictions**: Checked in ConfigHub and enforced by IAM boundaries at runtime
+
+This duplication is a feature, not a bug:
+- Cost of duplication: Low (policies are declarative, easy to maintain)
+- Cost of missed violation: High (security breach, compliance failure, production incident)
+
+### Policy Ownership
+
+| Policy Location | Owned By | When It Runs |
+|-----------------|----------|--------------|
+| CI / pre-commit | Platform team | Before merge |
+| ConfigHub | Platform team | Before apply (cub unit apply) |
+| Kyverno | Platform team | At Kubernetes admission |
+| IAM boundaries | Platform team | At AWS API call time |
+
+---
+
 ## Why This Separation Matters
 
 1. **Clear ownership**: Each plane has a distinct owner and change process. Platform engineers own Intent and Actuation; the Authority Plane mediates; AWS owns Runtime execution.

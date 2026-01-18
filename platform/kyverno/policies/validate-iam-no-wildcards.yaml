@@ -1,0 +1,101 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-iam-no-wildcards
+  annotations:
+    policies.kyverno.io/title: Block Wildcard IAM Permissions
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/description: >-
+      Prevents IAM policies with overly permissive wildcard actions or resources.
+      Wildcards like Action: "*" or Resource: "*" violate least-privilege principles.
+      See ISSUE-14.1 for details.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # Block IAM Role policies with wildcard actions
+    - name: block-wildcard-actions-in-role-policy
+      match:
+        any:
+          - resources:
+              kinds:
+                - iam.aws.upbound.io/*/RolePolicy
+      validate:
+        message: >-
+          IAM RolePolicy contains wildcard Action ("*" or "service:*").
+          Use specific actions like "s3:GetObject" instead of "s3:*".
+          Wildcard actions violate least-privilege security principles.
+        foreach:
+          - list: "request.object.spec.forProvider.policy"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ contains(element, '\"Action\":\"*\"') || contains(element, '\"Action\": \"*\"') }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ contains(element, '\"Action\":[\"*\"]') || contains(element, '\"Action\": [\"*\"]') }}"
+                    operator: Equals
+                    value: true
+
+    # Block IAM Policies with wildcard resources (too broad)
+    - name: block-wildcard-resources-in-role-policy
+      match:
+        any:
+          - resources:
+              kinds:
+                - iam.aws.upbound.io/*/RolePolicy
+      validate:
+        message: >-
+          IAM RolePolicy contains wildcard Resource ("*").
+          Scope resources to specific ARNs or ARN patterns.
+          Example: "arn:aws:s3:::my-bucket/*" instead of "*".
+        foreach:
+          - list: "request.object.spec.forProvider.policy"
+            deny:
+              conditions:
+                any:
+                  # Block standalone "*" but allow ARN patterns like "arn:*"
+                  - key: "{{ contains(element, '\"Resource\":\"*\"') || contains(element, '\"Resource\": \"*\"') }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ contains(element, '\"Resource\":[\"*\"]') || contains(element, '\"Resource\": [\"*\"]') }}"
+                    operator: Equals
+                    value: true
+
+---
+# Informational policy for detecting broad service wildcards (audit mode)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: audit-broad-iam-permissions
+  annotations:
+    policies.kyverno.io/title: Audit Broad IAM Permissions
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Detects IAM policies with broad service-level wildcards like "s3:*".
+      These are not blocked but flagged for review.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: audit-service-wildcards
+      match:
+        any:
+          - resources:
+              kinds:
+                - iam.aws.upbound.io/*/RolePolicy
+      validate:
+        message: >-
+          IAM RolePolicy uses service-level wildcards (e.g., "s3:*", "dynamodb:*").
+          Consider scoping to specific actions for least-privilege.
+          This is an informational warning, not a blocking error.
+        foreach:
+          - list: "request.object.spec.forProvider.policy"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('[a-z0-9]+:\\*', element) }}"
+                    operator: Equals
+                    value: true

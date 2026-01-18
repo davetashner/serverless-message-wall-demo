@@ -1,0 +1,101 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-encryption-at-rest
+  annotations:
+    policies.kyverno.io/title: Require Encryption at Rest
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Ensures that stateful AWS resources (S3, DynamoDB) have encryption at rest enabled.
+      For production environments, this is mandatory. For dev, it's recommended.
+      See ISSUE-14.4 for details.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # S3 Buckets must have server-side encryption configured
+    - name: s3-bucket-encryption
+      match:
+        any:
+          - resources:
+              kinds:
+                - s3.aws.upbound.io/*/Bucket
+      preconditions:
+        all:
+          # Only enforce for prod-tagged resources
+          - key: "{{ request.object.spec.forProvider.tags.environment || '' }}"
+            operator: Equals
+            value: "prod"
+      validate:
+        message: >-
+          Production S3 Buckets must have server-side encryption configured.
+          Add spec.forProvider.serverSideEncryptionConfiguration with AES256 or aws:kms.
+          This protects data at rest from unauthorized access.
+        pattern:
+          spec:
+            forProvider:
+              serverSideEncryptionConfiguration:
+                - rule:
+                    - applyServerSideEncryptionByDefault:
+                        - sseAlgorithm: "?*"
+
+    # DynamoDB Tables - production requires point-in-time recovery
+    - name: dynamodb-point-in-time-recovery
+      match:
+        any:
+          - resources:
+              kinds:
+                - dynamodb.aws.upbound.io/*/Table
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.forProvider.tags.environment || '' }}"
+            operator: Equals
+            value: "prod"
+      validate:
+        message: >-
+          Production DynamoDB Tables must have point-in-time recovery enabled.
+          Set spec.forProvider.pointInTimeRecovery.enabled = true.
+          This enables recovery from accidental deletes or data corruption.
+        pattern:
+          spec:
+            forProvider:
+              pointInTimeRecovery:
+                - enabled: true
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-s3-versioning
+  annotations:
+    policies.kyverno.io/title: Require S3 Versioning for Production
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Production S3 buckets should have versioning enabled for rollback capability.
+      See ISSUE-14.5 for environment-specific requirements.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: s3-versioning-prod
+      match:
+        any:
+          - resources:
+              kinds:
+                - s3.aws.upbound.io/*/BucketVersioning
+      preconditions:
+        all:
+          - key: "{{ request.object.metadata.labels.environment || '' }}"
+            operator: Equals
+            value: "prod"
+      validate:
+        message: >-
+          Production S3 Buckets should have versioning enabled.
+          This allows rollback of Lambda artifacts and configuration.
+        pattern:
+          spec:
+            forProvider:
+              versioningConfiguration:
+                - status: "Enabled"
