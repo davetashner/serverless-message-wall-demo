@@ -67,6 +67,16 @@ scripts/cleanup.sh
 - Event-driven, not synchronous chains
 - Demo-first, not production-hardening-first
 
+## Project Context
+
+Stable context that informs decision-making across sessions:
+
+- **ConfigHub** is a configuration authority product built by the repo owner (Steve/Dave). It provides versioned configuration storage, policy enforcement, and controlled deployment. Think of it as "the source of truth for what should be deployed."
+- **Target audience** for this demo is platform engineers and infrastructure teams evaluating control planes for cloud resource management.
+- **The agent future** — This project is explicitly designing for a world where AI agents propose and execute infrastructure changes. EPIC-15 and related work anticipates high agent-driven change velocity and the need for machine-verifiable safety guarantees.
+- **Why Crossplane?** — It provides a Kubernetes-native way to manage cloud resources declaratively, fitting the "actuator-only" principle. The XRD abstraction (EPIC-11) hides AWS complexity from developers.
+- **Why not Terraform?** — State file management, lack of continuous reconciliation, and poor fit for the Kubernetes-native control plane model.
+
 ## Issue Tracking
 
 This project uses [Beads](https://github.com/steveyegge/beads) for issue tracking. Issues are stored in `beads/backlog.jsonl`.
@@ -106,7 +116,7 @@ Key technical decisions are documented in `docs/decisions/`:
 - `infra/` - Crossplane manifests for AWS resources (base + env overlays)
 - `platform/` - Crossplane installation manifests (crossplane/, kyverno/, argocd/, iam/)
 - `scripts/` - Deployment and operational scripts
-- `beads/` - Issue tracking (backlog.jsonl, principles.md)
+- `beads/` - Issue tracking (backlog.jsonl, principles.md, current-focus.md)
 - `docs/decisions/` - Architecture Decision Records
 
 ## Documentation
