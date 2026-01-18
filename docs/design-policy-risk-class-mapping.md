@@ -2,8 +2,8 @@
 
 This document bridges EPIC-14 (policy guardrails) and EPIC-15 (agent-human boundaries) by defining how policies map to risk classes and how violations escalate to approval workflows.
 
-**Status**: Design document for ISSUE-14.7
-**Prerequisite for**: ISSUE-15.1 (risk class definitions)
+**Status**: Design document for ISSUE-14.7 (superseded by [risk-taxonomy.md](risk-taxonomy.md) for risk class definitions)
+**See also**: [risk-taxonomy.md](risk-taxonomy.md) — Authoritative risk class reference (ISSUE-15.1)
 
 ---
 

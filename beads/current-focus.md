@@ -4,20 +4,31 @@ Last updated: 2026-01-18
 
 ## What We Were Working On
 
-Completed ISSUE-14.7 (policy-to-risk-class mapping), which was the last open item in EPIC-14.
+Completed **EPIC-15: Define agent-human change boundaries** (all 8 issues).
 
-Created `docs/design-policy-risk-class-mapping.md` covering:
-- Risk class definitions (Low/Medium/High) with criteria
-- Schema field to risk class mapping
-- Policy to risk class mapping for all EPIC-14 policies
-- Escalation model (decision matrix for when approval is required)
-- Clear boundary between automated policy enforcement and human approval
+This epic establishes the conceptual foundation for how AI agents interact with configuration authority:
+
+### Documents Created
+
+| Issue | Document | Summary |
+|-------|----------|---------|
+| 15.1 | `docs/risk-taxonomy.md` | Formal risk class definitions (Low/Medium/High), schema field mapping, context elevators |
+| 15.2 | `docs/design-agent-proposal-workflow.md` | Proposal schema, lifecycle, storage options, review interface |
+| 15.3 | `docs/design-approval-gates.md` | Approval requirements by risk class, approver roles, blocking behavior |
+| 15.13 | `docs/approval-fatigue-and-theater.md` | 5 failure modes, 8 mitigations, when human approval is insufficient |
+| 15.14 | `docs/machine-verifiable-invariants.md` | 5 invariant categories, harm prevention examples, invariant vs human judgment boundary |
+| 15.15 | `docs/schema-evolution-pressure.md` | 5 schema risks, 4 extension strategies, promotion guidelines |
+| 15.17 | `docs/runtime-feedback-loops.md` | 4 feedback patterns, authority preservation, runaway risk mitigations |
+| 15.18 | `docs/confighub-bypass-criteria.md` | 8 bypass criteria, reconciliation requirements, ConfigHub non-goals |
 
 ## Key Outcomes This Session
 
-1. **EPIC-14 complete** — All 8 issues (14.0-14.7) are done
-2. **ISSUE-15.1 unblocked** — Can now proceed with formalizing risk class definitions
-3. **Design doc created** — `docs/design-policy-risk-class-mapping.md` bridges EPIC-14 and EPIC-15
+1. **EPIC-15 complete** — All 8 issues done, comprehensive design documentation
+2. **Agent-human boundary defined** — Clear model for how agents propose, humans decide
+3. **Risk taxonomy formalized** — Every schema field mapped to risk class
+4. **Approval workflow designed** — HIGH risk requires approval, LOW/MEDIUM auto-apply
+5. **Failure modes documented** — Approval fatigue risks and mitigations
+6. **Forward-looking analysis** — Schema evolution, runtime feedback, ConfigHub scope
 
 ## Not Ready Yet
 
@@ -28,20 +39,22 @@ Created `docs/design-policy-risk-class-mapping.md` covering:
 
 ## Recommended Next Items
 
-Now that EPIC-14 is complete and ISSUE-15.1 is unblocked:
+With EPIC-15 complete, recommended next items (awaiting user approval for EPIC-17):
 
-1. **ISSUE-15.1** — Define risk classes for configuration changes (formalizes the working model from 14.7 design doc)
-2. **ISSUE-17.1** — Create production ConfigHub space (concrete, no blockers, enables rest of EPIC-17)
+1. **EPIC-16** — Developer authoring experience and OAM evaluation (4 issues)
+2. **EPIC-17** — Production protection via ConfigHub gates (5 issues) — *requires user approval*
+3. **EPIC-18** — Tiered authority across environments (5 issues)
 
-Both are viable starting points. ISSUE-15.1 continues the risk/approval thread; ISSUE-17.1 starts concrete production protection work.
+EPIC-16 continues the developer experience thread. EPIC-17 implements concrete protection mechanisms. EPIC-18 addresses environment-specific authority tiers.
 
 ## Open Questions
 
-- What's blocking EPIC-11 (XRD)? Is it waiting on EPIC-17 (prod space)?
-- Prefer ISSUE-15.1 (continue risk model) or ISSUE-17.1 (start prod protection)?
+- What's blocking EPIC-11 (XRD)?
+- Ready to start EPIC-17 (production protection)?
+- Or prefer EPIC-16 (developer authoring) or EPIC-18 (tiered authority)?
 
 ## Session Stats
 
-- EPIC-14 completed (8 issues)
-- Design doc created: `docs/design-policy-risk-class-mapping.md`
-- Backlog updated: ISSUE-14.7 done, EPIC-14 done
+- EPIC-15 completed (8 issues)
+- 8 design documents created in docs/
+- Backlog updated: All EPIC-15 issues done, epic marked done
