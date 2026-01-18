@@ -15,6 +15,50 @@
 
 ## Feedback Loop Patterns
 
+```mermaid
+flowchart TD
+    subgraph "Runtime Layer"
+        R[Runtime Signals]
+        R --> M[Metrics/Errors/Costs]
+    end
+
+    subgraph "Pattern 1: Proposal-Gated"
+        M --> A1[Agent Analysis]
+        A1 --> P1[Create Proposal]
+        P1 --> H1[Human Review]
+        H1 --> C1[ConfigHub]
+    end
+
+    subgraph "Pattern 2: Bounded Auto-Tuning"
+        M --> B1{Within Bounds?}
+        B1 -->|Yes| B2{Cooldown OK?}
+        B2 -->|Yes| C2[ConfigHub]
+        B1 -->|No| B3[Alert Only]
+        B2 -->|No| B3
+    end
+
+    subgraph "Pattern 3: Drift Capture"
+        D1[Detect Drift] --> D2[Capture to ConfigHub]
+        D2 --> D3[Tag: break-glass]
+        D3 --> D4[Post-Incident Review]
+    end
+
+    subgraph "Pattern 4: Sidecar"
+        M --> S1[Generate Recommendations]
+        S1 --> S2[Advisory Dashboard]
+        S2 -.->|Operator acts| C1
+    end
+
+    C1 --> AWS[AWS Resources]
+    C2 --> AWS
+
+    style C1 fill:#69f
+    style C2 fill:#69f
+    style AWS fill:#f96
+```
+
+*Figure: Four feedback loop patterns showing how runtime signals flow through the authority plane.*
+
 | Pattern | How It Works | When to Use |
 |---------|--------------|-------------|
 | **Proposal-Gated** | Runtime → Agent → Proposal → Human review | Most scenarios (safe default) |

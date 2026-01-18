@@ -64,17 +64,35 @@ cub revision revert 47 --space messagewall-prod   # Undo
 
 ## Decision Framework
 
+```mermaid
+flowchart TD
+    A[Configuration Change] --> B{Should persist?}
+
+    B -->|No| C[BYPASS]
+    C --> C1[Ephemeral / Experiments]
+
+    B -->|Yes| D{Contains secrets?}
+    D -->|Yes| E[BYPASS]
+    E --> E1[Use Secrets Manager]
+
+    D -->|No| F{ConfigHub available?}
+    F -->|No| G[BYPASS + RECONCILE]
+    G --> G1[Break-glass within 1 hr]
+
+    F -->|Yes| H{Would add value?}
+    H -->|No| I[BYPASS]
+    I --> I1[Local dev / Observability]
+
+    H -->|Yes| J[USE CONFIGHUB]
+
+    style C fill:#ff6
+    style E fill:#ff6
+    style G fill:#f96
+    style I fill:#ff6
+    style J fill:#6f6
 ```
-Is this configuration that should persist?
-├── No → Bypass (ephemeral, experiments)
-└── Yes → Contains secrets?
-          ├── Yes → Bypass (use secrets manager)
-          └── No → ConfigHub available?
-                   ├── No → Bypass + reconcile (break-glass)
-                   └── Yes → Would ConfigHub add value?
-                             ├── Yes → Use ConfigHub
-                             └── No → Bypass (local, observability)
-```
+
+*Figure: Decision tree for when to use ConfigHub vs. bypass.*
 
 ---
 

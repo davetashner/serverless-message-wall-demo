@@ -97,11 +97,36 @@ Contexts that automatically elevate risk class:
 
 ## Risk Calculation Algorithm
 
+```mermaid
+flowchart TD
+    A[Change Submitted] --> B[Extract Changed Fields]
+    B --> C[Look Up Base Risk per Field]
+    C --> D[Take Highest Base Risk]
+
+    D --> E{Production?}
+    E -->|Yes| F[Elevate +1 level]
+    E -->|No| G[Keep current]
+
+    F --> H{Deletion?}
+    G --> H
+    H -->|Yes| I[Set to HIGH]
+    H -->|No| J{Cross-Account?}
+
+    I --> K[Cap at HIGH]
+    J -->|Yes| I
+    J -->|No| K
+
+    K --> L{Final Risk Class}
+    L -->|LOW| M[Auto-apply 5 min]
+    L -->|MEDIUM| N[Notify + auto-apply 1 hr]
+    L -->|HIGH| O[Require approval]
+
+    style M fill:#6f6
+    style N fill:#ff6
+    style O fill:#f66
 ```
-1. Base risk = highest risk of changed field(s)
-2. Apply elevators: prod (+1), delete (→HIGH), cross-account (→HIGH)
-3. Cap at HIGH
-```
+
+*Figure: Risk calculation decision tree showing base risk, elevators, and final routing.*
 
 ### Examples
 

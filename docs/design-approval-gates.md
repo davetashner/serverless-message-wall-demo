@@ -28,11 +28,43 @@
 
 ## Approval Workflow
 
-1. **Proposal created** → Agent/CI creates proposal per [design-agent-proposal-workflow.md](design-agent-proposal-workflow.md)
-2. **Risk assessed** → System computes risk class (e.g., "region + prod = HIGH")
-3. **Approval request** → For HIGH risk: approval request created, approvers notified
-4. **Decision** → Approver reviews and approves/rejects with reason
-5. **Application** → On approval, proposal applied to ConfigHub
+```mermaid
+flowchart LR
+    subgraph "1. Proposal"
+        A[Agent/CI] --> B[Create Proposal]
+    end
+
+    subgraph "2. Risk Assessment"
+        B --> C{Compute Risk}
+        C --> D[Base risk + elevators]
+    end
+
+    subgraph "3. Routing"
+        D --> E{Risk Class}
+        E -->|LOW| F[Auto-apply queue]
+        E -->|MEDIUM| G[Notify + auto-apply]
+        E -->|HIGH| H[Approval required]
+    end
+
+    subgraph "4. Decision"
+        H --> I[Notify approvers]
+        I --> J{Review}
+        J -->|Approve| K[Record decision]
+        J -->|Reject| L[Record + close]
+    end
+
+    subgraph "5. Application"
+        F --> M[Apply to ConfigHub]
+        G --> M
+        K --> M
+        M --> N[Sync to Actuator]
+    end
+
+    style L fill:#f66
+    style N fill:#6f6
+```
+
+*Figure: Approval workflow from proposal through risk-based routing to application.*
 
 ---
 

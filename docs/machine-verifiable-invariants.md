@@ -63,13 +63,42 @@ Human approval fails at scale. But certain safety properties are machine-checkab
 
 ## Boundary: Invariants vs. Human Judgment
 
+```mermaid
+flowchart TD
+    A[Configuration Change] --> B{Invariant Check}
+
+    B -->|FAIL| C[BLOCKED]
+    C --> D[No Override Possible]
+    D --> E[Must Change the Invariant]
+
+    B -->|PASS| F{Policy Check}
+    F -->|FAIL| G[BLOCKED by Policy]
+    F -->|PASS| H[Classify Risk]
+
+    H --> I{Risk Class}
+    I -->|LOW| J[Auto-Apply]
+    I -->|MEDIUM| K[Notify + Auto-Apply]
+    I -->|HIGH| L{Human Approval}
+
+    L -->|Approve| M[Apply]
+    L -->|Reject| N[Rejected]
+
+    style C fill:#f66
+    style D fill:#f66
+    style G fill:#f66
+    style N fill:#f66
+    style J fill:#6f6
+    style K fill:#ff6
+    style M fill:#6f6
+```
+
+*Figure: Decision flow showing invariant enforcement (no override) vs. human judgment (HIGH risk approval).*
+
 | Use Invariants For | Use Human Judgment For |
 |--------------------|------------------------|
 | Deterministic checks | Context awareness (timing, business) |
 | Universal rules | Trade-off analysis |
 | Catastrophe prevention | Stakeholder coordination |
-
-**Decision flow**: Change → Invariant Check → [FAIL: blocked, no override] or [PASS] → Risk Assessment → Human approval if HIGH
 
 **Don't ask humans** about wildcards, memory limits, or regions—convert these to invariants.
 

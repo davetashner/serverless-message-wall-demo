@@ -63,19 +63,43 @@ status:
 
 ## Proposal Lifecycle
 
+```mermaid
+flowchart TD
+    subgraph Creation
+        A[Agent Creates Proposal] --> B{Schema Valid?}
+        B -->|No| C[REJECTED: Invalid syntax]
+        B -->|Yes| D{Policy Check}
+    end
+
+    subgraph Validation
+        D -->|Fail| E[BLOCKED: Policy violation]
+        D -->|Pass| F[Classify Risk]
+    end
+
+    subgraph "Risk-Based Routing"
+        F --> G{Risk Class?}
+        G -->|LOW| H[Queue: 5 min delay]
+        G -->|MEDIUM| I[Queue: 1 hr + notify ops]
+        G -->|HIGH| J[Queue: Awaiting approval]
+    end
+
+    subgraph Resolution
+        H -->|No override| K[Auto-Approve]
+        I -->|No intervention| K
+        J -->|Approver decision| L{Decision?}
+        L -->|Approve| K
+        L -->|Reject| M[REJECTED: With reason]
+        K --> N[Apply to ConfigHub]
+        N --> O[APPLIED]
+    end
+
+    style C fill:#f66
+    style E fill:#f66
+    style M fill:#f66
+    style O fill:#6f6
 ```
-Create → Validate → Policy Check → [FAIL: blocked] or [PASS]
-                                         ↓
-                                   Risk Assess
-                                         ↓
-                    ┌────────────────────┼────────────────────┐
-                   LOW                 MEDIUM                HIGH
-              Auto-approve         Auto-approve          Require
-               (5 min)         (1 hr + notification)    approval
-                                         ↓
-                              APPROVED → Apply to ConfigHub
-                              REJECTED → Log with reason
-```
+
+*Figure: Proposal lifecycle from creation through risk-based routing to resolution.*
 
 **Pending behavior by risk**:
 - LOW: Auto-approve after 5 min (human can override)
