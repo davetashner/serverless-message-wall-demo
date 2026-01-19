@@ -34,3 +34,9 @@ secrets/
 # ConfigHub rendered files (CI generates these)
 rendered/
 .confighub-rendered/
+
+# Runtime/ephemeral artifacts
+daemon/
+.events.jsonl
+.feed.jsonl
+**/.runtime/
