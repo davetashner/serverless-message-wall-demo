@@ -2,6 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## TL;DR — Critical Rules
+
+**Before you do anything else**, know these rules:
+
+| Rule | Details |
+|------|---------|
+| **Commit format** | `type(scope): Subject` — Conventional Commits enforced by hook |
+| **Types** | `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci` |
+| **Review before push** | Run `./scripts/review-changes.sh` to self-review |
+| **PR evidence** | Non-docs PRs must have `## Evidence` section |
+| **Backlog updates** | Update `beads/backlog.jsonl` when completing issues |
+| **Don't modify backlog** | Without user approval |
+| **Read current-focus.md** | For session handoff notes and what's blocked |
+
+**Quick commit example:**
+```bash
+git commit -m "feat(issue-8.5): Add bulk configuration demo"
+```
+
+---
+
 ## Project Overview
 
 This is a serverless message wall demo application deployed on AWS using Crossplane as the infrastructure actuator running in Kubernetes. The key architectural constraint is that **Kubernetes runs only Crossplane controllers** — no application code runs in the cluster.
@@ -156,3 +177,22 @@ Key technical decisions are documented in `docs/decisions/`:
 
 - `docs/setup-actuator-cluster.md` - Step-by-step guide to set up the actuator cluster
 - `docs/demo-guide.md` - Demo talking points, commands, and common questions
+
+## Agentic Workflow Scripts
+
+Scripts for AI-assisted development workflow:
+
+```bash
+# Review your changes before pushing (uses Claude Code CLI, free with Max)
+./scripts/review-changes.sh
+
+# Review and auto-fix any issues found
+./scripts/review-changes.sh --fix
+
+# After pushing a PR, watch for review feedback and auto-address it
+./scripts/pr-feedback-loop.sh <PR_NUMBER>
+```
+
+**Optional auto-review on push:** Enable with `chmod +x .husky/pre-push`
+
+See `CONTRIBUTING.md` for full workflow documentation.
