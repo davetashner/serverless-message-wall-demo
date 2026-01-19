@@ -166,6 +166,7 @@ To add a new environment (e.g., `staging`):
 
 ## References
 
+- [Precious Resources](precious-resources.md) — Database unit classification and protection
 - [Tiered Authority Model](tiered-authority-model.md) — Governance by tier
 - [CI ConfigHub Setup](ci-confighub-setup.md) — Publishing to ConfigHub
 - [ConfigHub Crossplane Narrative](confighub-crossplane-narrative.md) — Architecture overview

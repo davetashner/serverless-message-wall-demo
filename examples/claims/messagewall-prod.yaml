@@ -4,6 +4,7 @@
 # This example shows production settings with:
 #   - Higher Lambda memory for better performance
 #   - Longer timeout for reliability
+#   - Precious resource annotations for delete/destroy protection
 #
 # Prerequisites:
 #   - MessageWallRoleBoundary IAM policy must exist in AWS
@@ -15,12 +16,25 @@
 #
 # Verify:
 #   kubectl get managed -l crossplane.io/claim-name=messagewall-prod
+#
+# Protection:
+#   This Claim contains precious resources (DynamoDB, S3) with customer data.
+#   Delete/destroy operations require explicit approval per EPIC-17.
+#   See docs/precious-resources.md for details.
 ---
 apiVersion: messagewall.demo/v1alpha1
 kind: ServerlessEventAppClaim
 metadata:
   name: messagewall-prod
   namespace: default
+  annotations:
+    # Precious resource protection (EPIC-17)
+    confighub.io/precious: "true"
+    confighub.io/precious-resources: "dynamodb,s3"
+    confighub.io/data-classification: "customer-data"
+    # Gate enforcement
+    confighub.io/delete-gate: "enabled"
+    confighub.io/destroy-gate: "enabled"
 spec:
   # Required fields
   environment: prod
