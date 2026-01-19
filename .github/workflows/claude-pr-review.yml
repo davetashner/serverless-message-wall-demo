@@ -1,0 +1,181 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    # Don't review PRs from bots or if disabled
+    if: |
+      github.event.pull_request.draft == false &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-ai-review')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          # Get the diff between base and head
+          git diff ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} > pr_diff.txt
+
+          # Get changed files list
+          git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} > changed_files.txt
+
+          echo "Changed files:"
+          cat changed_files.txt
+
+          # Check diff size (Claude has context limits)
+          DIFF_LINES=$(wc -l < pr_diff.txt)
+          echo "diff_lines=$DIFF_LINES" >> $GITHUB_OUTPUT
+
+          if [ "$DIFF_LINES" -gt 2000 ]; then
+            echo "large_diff=true" >> $GITHUB_OUTPUT
+          else
+            echo "large_diff=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Read project standards
+        id: standards
+        run: |
+          # Read CONTRIBUTING.md for standards context
+          if [ -f CONTRIBUTING.md ]; then
+            cat CONTRIBUTING.md > standards.txt
+          else
+            echo "No CONTRIBUTING.md found" > standards.txt
+          fi
+
+          # Read CLAUDE.md for additional context
+          if [ -f CLAUDE.md ]; then
+            echo -e "\n\n---\n\n" >> standards.txt
+            cat CLAUDE.md >> standards.txt
+          fi
+
+      - name: Call Claude API for review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          LARGE_DIFF: ${{ steps.diff.outputs.large_diff }}
+        run: |
+          # Build the prompt
+          cat > prompt.txt << 'PROMPT_END'
+          You are a code reviewer for a serverless infrastructure project. Review this PR according to the project standards.
+
+          ## Your Task
+          1. Check if the changes follow the project's coding standards and conventions
+          2. Look for potential bugs, security issues, or performance problems
+          3. Verify the changes align with the project's architecture principles
+          4. Check commit message format (Conventional Commits required)
+          5. Assess whether the PR has adequate evidence/testing
+
+          ## Response Format
+          Provide your review in this exact format:
+
+          ### Summary
+          <1-2 sentence overall assessment>
+
+          ### Verdict
+          <APPROVE | REQUEST_CHANGES | COMMENT>
+
+          ### Issues Found
+          <Bulleted list of specific issues, or "None" if clean>
+
+          ### Suggestions
+          <Optional improvements that aren't blocking>
+
+          Keep your review concise and actionable. Focus on substantive issues, not style nitpicks.
+          PROMPT_END
+
+          # Add PR context
+          echo -e "\n\n## PR Information\n" >> prompt.txt
+          echo "Title: $PR_TITLE" >> prompt.txt
+          echo "Author: $PR_AUTHOR" >> prompt.txt
+          echo -e "\nDescription:\n$PR_BODY" >> prompt.txt
+
+          # Add standards
+          echo -e "\n\n## Project Standards\n" >> prompt.txt
+          cat standards.txt >> prompt.txt
+
+          # Add diff (truncated if too large)
+          echo -e "\n\n## Code Changes\n" >> prompt.txt
+          echo "Changed files:" >> prompt.txt
+          cat changed_files.txt >> prompt.txt
+          echo -e "\n\nDiff:\n\`\`\`diff" >> prompt.txt
+
+          if [ "$LARGE_DIFF" = "true" ]; then
+            echo "(Diff truncated to first 1500 lines due to size)" >> prompt.txt
+            head -n 1500 pr_diff.txt >> prompt.txt
+          else
+            cat pr_diff.txt >> prompt.txt
+          fi
+          echo -e "\`\`\`" >> prompt.txt
+
+          # Call Claude API
+          PROMPT_CONTENT=$(cat prompt.txt | jq -Rs .)
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "{
+              \"model\": \"claude-sonnet-4-20250514\",
+              \"max_tokens\": 2048,
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": $PROMPT_CONTENT
+                }
+              ]
+            }")
+
+          # Extract the review text
+          REVIEW=$(echo "$RESPONSE" | jq -r '.content[0].text // .error.message // "Failed to get review"')
+
+          # Save review to file (handles multiline)
+          echo "$REVIEW" > review.txt
+
+          # Extract verdict for PR review action
+          VERDICT=$(echo "$REVIEW" | grep -A1 "### Verdict" | tail -1 | tr -d ' ' | tr '[:lower:]' '[:upper:]')
+          echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
+
+          echo "Review generated successfully"
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review.txt', 'utf8');
+            const verdict = '${{ steps.review.outputs.verdict }}';
+
+            // Map verdict to GitHub review event
+            let event = 'COMMENT';
+            if (verdict.includes('APPROVE')) {
+              event = 'APPROVE';
+            } else if (verdict.includes('REQUEST_CHANGES')) {
+              event = 'REQUEST_CHANGES';
+            }
+
+            // Post the review
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: `## 🤖 Claude Code Review\n\n${review}\n\n---\n*Automated review by Claude. Add \`skip-ai-review\` label to disable.*`,
+              event: event
+            });
+
+            console.log(`Posted ${event} review`);

@@ -159,7 +159,26 @@ chore/update-dependencies
 | Commit message format | Local (husky + commitlint) |
 | Commit message format | PR (GitHub Action) |
 | PR evidence section | PR (GitHub Action) |
+| AI code review | PR (GitHub Action) |
 | Branch naming | Advisory only |
+
+## AI Code Review
+
+All PRs are automatically reviewed by Claude via the `claude-pr-review.yml` workflow. The AI reviewer:
+
+- Checks code against project standards (this document + CLAUDE.md)
+- Looks for bugs, security issues, and architectural violations
+- Verifies commit message format
+- Assesses evidence/testing adequacy
+
+**Review verdicts:**
+- `APPROVE` — Changes look good
+- `COMMENT` — Suggestions but not blocking
+- `REQUEST_CHANGES` — Issues that should be addressed
+
+**To skip AI review:** Add the `skip-ai-review` label to the PR.
+
+**Setup (maintainers):** The workflow requires an `ANTHROPIC_API_KEY` secret in the repository settings.
 
 ## Setup for Contributors
 
