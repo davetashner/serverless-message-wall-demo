@@ -199,3 +199,38 @@ feat(issue-8.5): Add bulk configuration demo
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
+
+## PR Feedback Loop
+
+After pushing a PR, you can run an automated feedback loop that watches for review comments and invokes Claude Code to address them:
+
+```bash
+# Start the feedback loop for PR #42
+./scripts/pr-feedback-loop.sh 42
+
+# With options
+./scripts/pr-feedback-loop.sh 42 --interval 60 --max-iterations 5
+
+# Dry run (see what would happen)
+./scripts/pr-feedback-loop.sh 42 --dry-run
+```
+
+**How it works:**
+1. Checks out the PR branch
+2. Polls GitHub for new review comments
+3. When feedback is found, invokes Claude Code to address it
+4. Commits and pushes the fixes
+5. Repeats until PR is approved or max iterations reached
+
+**Requirements:**
+- `gh` CLI installed and authenticated
+- `claude` CLI installed (Claude Code)
+- `jq` installed
+
+**Configuration:**
+| Option | Environment Variable | Default | Description |
+|--------|---------------------|---------|-------------|
+| `--interval` | `POLL_INTERVAL` | 30 | Seconds between checks |
+| `--max-iterations` | `MAX_ITERATIONS` | 10 | Max feedback rounds |
+
+Press `Ctrl+C` to exit the loop at any time.
