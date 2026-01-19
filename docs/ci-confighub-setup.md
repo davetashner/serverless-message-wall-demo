@@ -72,6 +72,13 @@ To add a new environment (e.g., `prod`):
 2. Create the ConfigHub space (e.g., `messagewall-prod`)
 3. Add the space to the workflow's `environment` choices
 
+For production specifically, use the setup script:
+```bash
+./scripts/setup-prod-space.sh
+```
+
+See [ConfigHub Spaces](confighub-spaces.md) for the full space-to-environment mapping and governance details.
+
 ## Troubleshooting
 
 ### "Worker not found" error

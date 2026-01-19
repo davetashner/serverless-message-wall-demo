@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: messagewall-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    environment: prod
+    tier: production
+spec:
+  project: default
+
+  # Source: ConfigHub space via CMP
+  source:
+    # RepoURL is required but not used by CMP; set to a placeholder
+    repoURL: https://confighub.example.com/messagewall-prod
+    # Path is required but not used by CMP
+    path: .
+    # Use the ConfigHub CMP plugin
+    plugin:
+      name: confighub
+      env:
+        - name: CONFIGHUB_SPACE
+          value: messagewall-prod
+
+  # Destination: the local actuator cluster
+  # NOTE: In a multi-cluster setup, production would target a dedicated prod cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  # Sync policy
+  # PRODUCTION NOTE: Auto-sync is enabled but changes require explicit promotion.
+  # The CMP plugin only fetches LiveRevisionNum from ConfigHub.
+  # This means:
+  # - CI can push new revisions (HeadRevisionNum advances)
+  # - ArgoCD won't sync until 'cub unit apply' promotes them (LiveRevisionNum advances)
+  # - HIGH risk changes require multi-party approval before promotion
+  # - Delete gates protect stateful resources (DynamoDB, S3)
+  # See docs/tiered-authority-model.md for production governance details.
+  syncPolicy:
+    # Automated sync: continuously reconcile ConfigHub Live revisions -> Kubernetes
+    automated:
+      # Remove resources from cluster when deleted from ConfigHub
+      # NOTE: For prod, delete gates in ConfigHub prevent accidental deletion
+      prune: true
+      # Auto-heal: revert manual changes to match ConfigHub
+      selfHeal: true
+      # Allow empty: don't fail if ConfigHub returns no resources
+      allowEmpty: false
+
+    # Sync options
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+
+    # Retry on sync failure
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignore differences in fields that change frequently
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+    # Crossplane managed resources have status fields that change
+    - group: "*.aws.upbound.io"
+      kind: "*"
+      jsonPointers:
+        - /status
