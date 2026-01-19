@@ -1,8 +1,20 @@
-name: Claude PR Review
+name: Claude PR Review (API)
 
+# DISABLED BY DEFAULT - Uses Anthropic API (costs money)
+# This workflow is here for teams with API access who want CI-based review.
+# Most users should use ./scripts/review-changes.sh locally instead (free with Max).
+#
+# To enable: uncomment the pull_request trigger below
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+  # Uncomment below to enable automatic PR review (requires ANTHROPIC_API_KEY secret)
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
 
 permissions:
   contents: read

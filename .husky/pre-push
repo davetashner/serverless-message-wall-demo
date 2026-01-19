@@ -1,0 +1,15 @@
+# Optional: Claude Code review before push
+# To enable: chmod +x .husky/pre-push
+# To disable: chmod -x .husky/pre-push
+#
+# This hook is NOT executable by default.
+# Enable it if you want automatic code review before every push.
+
+# Skip if pushing to main (reviews happen on feature branches)
+current_branch=$(git branch --show-current)
+if [ "$current_branch" = "main" ]; then
+    exit 0
+fi
+
+# Run review in hook mode (blocks push if REQUEST_CHANGES)
+./scripts/review-changes.sh --hook

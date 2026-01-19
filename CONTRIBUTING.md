@@ -159,26 +159,46 @@ chore/update-dependencies
 | Commit message format | Local (husky + commitlint) |
 | Commit message format | PR (GitHub Action) |
 | PR evidence section | PR (GitHub Action) |
-| AI code review | PR (GitHub Action) |
+| AI code review | Local (review-changes.sh) |
+| AI code review (optional) | Pre-push hook |
 | Branch naming | Advisory only |
 
 ## AI Code Review
 
-All PRs are automatically reviewed by Claude via the `claude-pr-review.yml` workflow. The AI reviewer:
+Review your changes locally using Claude Code CLI (covered by your Max subscription):
 
-- Checks code against project standards (this document + CLAUDE.md)
-- Looks for bugs, security issues, and architectural violations
-- Verifies commit message format
-- Assesses evidence/testing adequacy
+```bash
+# Review changes on current branch vs main
+./scripts/review-changes.sh
+
+# Review and offer to fix issues automatically
+./scripts/review-changes.sh --fix
+
+# Compare against a different branch
+./scripts/review-changes.sh --base develop
+```
 
 **Review verdicts:**
-- `APPROVE` — Changes look good
+- `APPROVE` — Changes look good, push away
 - `COMMENT` — Suggestions but not blocking
-- `REQUEST_CHANGES` — Issues that should be addressed
+- `REQUEST_CHANGES` — Issues to fix before pushing
 
-**To skip AI review:** Add the `skip-ai-review` label to the PR.
+### Optional: Automatic Review on Push
 
-**Setup (maintainers):** The workflow requires an `ANTHROPIC_API_KEY` secret in the repository settings.
+Enable the pre-push hook to review automatically before every push:
+
+```bash
+chmod +x .husky/pre-push
+```
+
+This blocks pushes if the review returns `REQUEST_CHANGES`. Disable with:
+```bash
+chmod -x .husky/pre-push
+```
+
+### CI-Based Review (Optional)
+
+For teams with Anthropic API access, there's also a GitHub Action workflow (`claude-pr-review.yml`) that can review PRs in CI. It's disabled by default to avoid API costs. See the workflow file to enable it.
 
 ## Setup for Contributors
 
