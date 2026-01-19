@@ -2,42 +2,50 @@
 
 Last updated: 2026-01-19
 
-## Latest Session: EPIC-17 Production Gate Enforcement
+## Latest Session: EPIC-17 Complete
 
-Completed ISSUE-17.3: implemented delete/destroy gates via Kyverno policies.
+Completed EPIC-17: All production protection gates implemented.
 
 ### What Changed
 
 | Item | Change |
 |------|--------|
-| `platform/kyverno/policies/gate-precious-resources.yaml` | Kyverno policy blocking delete/destroy of precious resources |
-| `docs/production-gates.md` | Documentation for gate configuration and override |
-| `scripts/verify-production-gates.sh` | Verification script for gate status |
-| ISSUE-17.3 | Marked done |
+| `docs/gate-override-workflow.md` | Approval workflow documentation |
+| `docs/demo-production-gates.md` | Gate demonstration runbook |
+| `scripts/demo-gate-workflow.sh` | Automated demo script |
+| ISSUE-17.4, ISSUE-17.5 | Marked done |
+| EPIC-17 | Marked done |
 
-### Gate Enforcement
+### EPIC-17 Summary (Complete)
 
-- **Delete Gate**: Blocks `kubectl delete` on Claims with `precious=true`
-- **Destroy Gate**: Blocks environment changes and annotation removal
-- **Override**: `confighub.io/break-glass=approved` annotation with approval
+| Issue | Deliverable |
+|-------|-------------|
+| 17.1 | Production ConfigHub space infrastructure |
+| 17.2 | Precious resource convention and annotations |
+| 17.3 | Kyverno gate policy enforcement |
+| 17.4 | Approval workflow documentation |
+| 17.5 | Demo runbook and script |
 
-### EPIC-17 Status
+### Key Documentation
 
-| Issue | Status | Notes |
-|-------|--------|-------|
-| ISSUE-17.1 | Done | Production space infrastructure |
-| ISSUE-17.2 | Done | Precious identification |
-| ISSUE-17.3 | Done | Gate enforcement (this session) |
-| ISSUE-17.4 | Pending | Approval workflow for gates |
-| ISSUE-17.5 | Pending | Gate demonstration drill |
+- `docs/precious-resources.md` — What is precious
+- `docs/production-gates.md` — How gates work
+- `docs/gate-override-workflow.md` — How to override
+- `docs/demo-production-gates.md` — How to demo
 
-### Next Step
+### Next Epic
 
-ISSUE-17.4: Define and document the approval workflow to override delete/destroy gates.
+EPIC-19 (ConfigHub multi-tenancy) or EPIC-21 (Observability) per backlog priority.
 
 ---
 
-## Previous Session: EPIC-17 Precious Resource Identification
+## Previous Session: EPIC-17 Gate Enforcement
+
+Completed ISSUE-17.3: Kyverno policies for delete/destroy gates.
+
+---
+
+## Earlier Session: EPIC-17 Precious Resource Identification
 
 Completed ISSUE-17.2: defined precious resource convention and updated production Claims.
 
