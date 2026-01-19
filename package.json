@@ -1,0 +1,14 @@
+{
+  "name": "serverless-message-wall-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serverless message wall demo with Crossplane and ConfigHub",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "husky": "^9.0.0"
+  }
+}

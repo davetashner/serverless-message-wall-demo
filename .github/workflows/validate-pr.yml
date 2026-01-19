@@ -1,0 +1,100 @@
+name: Validate PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize]
+
+jobs:
+  check-evidence:
+    name: Check PR evidence section
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if docs-only change
+        id: docs-check
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Check if all changes are docs-only
+          # Docs-only means: .md files, docs/ directory, or CLAUDE.md/CONTRIBUTING.md
+          DOCS_ONLY=true
+          while IFS= read -r file; do
+            if [[ -z "$file" ]]; then
+              continue
+            fi
+            # Check if file is documentation
+            if [[ "$file" == *.md ]] || [[ "$file" == docs/* ]]; then
+              continue
+            fi
+            # Not a docs file
+            DOCS_ONLY=false
+            break
+          done <<< "$CHANGED_FILES"
+
+          echo "docs_only=$DOCS_ONLY" >> $GITHUB_OUTPUT
+          echo "Is docs-only: $DOCS_ONLY"
+
+      - name: Check for evidence section
+        if: steps.docs-check.outputs.docs_only != 'true'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          echo "Checking PR body for evidence section..."
+
+          # Check if PR body contains an Evidence section
+          if echo "$PR_BODY" | grep -qiE '^##\s*evidence'; then
+            echo "✅ Evidence section found"
+
+            # Check if evidence section has content (not just the header)
+            # Extract content after ## Evidence until next ## or end
+            EVIDENCE_CONTENT=$(echo "$PR_BODY" | sed -n '/^##[[:space:]]*[Ee]vidence/,/^##/p' | tail -n +2 | head -n -1)
+
+            # If no next section, get everything after Evidence header
+            if [[ -z "$EVIDENCE_CONTENT" ]]; then
+              EVIDENCE_CONTENT=$(echo "$PR_BODY" | sed -n '/^##[[:space:]]*[Ee]vidence/,$p' | tail -n +2)
+            fi
+
+            # Remove empty lines and whitespace
+            EVIDENCE_TRIMMED=$(echo "$EVIDENCE_CONTENT" | sed '/^[[:space:]]*$/d' | tr -d '[:space:]')
+
+            if [[ -z "$EVIDENCE_TRIMMED" ]]; then
+              echo "❌ Evidence section is empty"
+              echo ""
+              echo "Please add evidence that your change works. Examples:"
+              echo "  - Test output"
+              echo "  - Command output showing the feature works"
+              echo "  - Screenshot"
+              echo "  - Link to CI run"
+              echo ""
+              echo "See CONTRIBUTING.md for details."
+              exit 1
+            fi
+
+            echo "✅ Evidence section has content"
+          else
+            echo "❌ No evidence section found in PR body"
+            echo ""
+            echo "This PR modifies non-documentation files and requires an Evidence section."
+            echo ""
+            echo "Please add to your PR description:"
+            echo ""
+            echo "## Evidence"
+            echo "<proof that your change works>"
+            echo ""
+            echo "See CONTRIBUTING.md for details."
+            exit 1
+          fi
+
+      - name: Skip evidence check for docs-only
+        if: steps.docs-check.outputs.docs_only == 'true'
+        run: |
+          echo "✅ Docs-only change - evidence section not required"

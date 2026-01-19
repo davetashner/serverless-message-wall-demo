@@ -88,6 +88,39 @@ bd create "title"    # Create new issue
 bd update <id> --status in_progress
 ```
 
+### Commit Message Format
+
+**All commits must follow [Conventional Commits](https://www.conventionalcommits.org/).** This is enforced by commitlint via husky hooks locally and GitHub Actions on PRs.
+
+```
+<type>(<scope>): <subject>
+```
+
+**Types:** `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`
+
+**Scope:** Use epic/issue ID or component name: `epic-11`, `issue-8.5`, `lambda`, `crossplane`, `backlog`
+
+**Subject:** Imperative mood, sentence case, no period, max 72 chars.
+
+**Examples:**
+```bash
+feat(issue-8.5): Add bulk configuration change demo
+fix(lambda): Correct timeout handling in api-handler
+docs(epic-15): Add Mermaid diagrams for approval workflow
+chore(backlog): Update issue statuses for EPIC-14
+```
+
+See `CONTRIBUTING.md` for full details.
+
+### PR Evidence Requirement
+
+**PRs to main must include an `## Evidence` section** proving the change works (except docs-only changes). Examples:
+- Test output
+- Command output showing the feature works
+- Screenshot or link to CI run
+
+This is enforced by GitHub Actions. See `CONTRIBUTING.md` for details.
+
 ### Before Pushing to Main
 
 **Always update `beads/backlog.jsonl` before pushing to main.** When completing work on an issue:
