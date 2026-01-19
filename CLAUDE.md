@@ -11,14 +11,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **Commit format** | `type(scope): Subject` — Conventional Commits enforced by hook |
 | **Types** | `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci` |
 | **Review before push** | Run `./scripts/review-changes.sh` to self-review |
+| **After creating PR** | Run `./scripts/pr-feedback-loop.sh <PR#>` to handle review feedback |
 | **PR evidence** | Non-docs PRs must have `## Evidence` section |
 | **Backlog updates** | Update `beads/backlog.jsonl` when completing issues |
 | **Don't modify backlog** | Without user approval |
 | **Read current-focus.md** | For session handoff notes and what's blocked |
 
-**Quick commit example:**
+**Quick workflow:**
 ```bash
-git commit -m "feat(issue-8.5): Add bulk configuration demo"
+./scripts/review-changes.sh           # Before pushing
+git push && gh pr create ...          # Create PR
+./scripts/pr-feedback-loop.sh 42      # Handle review feedback
 ```
 
 ---
@@ -196,3 +199,20 @@ Scripts for AI-assisted development workflow:
 **Optional auto-review on push:** Enable with `chmod +x .husky/pre-push`
 
 See `CONTRIBUTING.md` for full workflow documentation.
+
+### After Creating a PR
+
+**When you create or push a PR, always start the feedback loop:**
+
+```bash
+# After: gh pr create ... or git push for an existing PR
+./scripts/pr-feedback-loop.sh <PR_NUMBER>
+```
+
+This monitors the PR for review comments and automatically addresses feedback until the PR is approved. The loop:
+1. Polls for new review comments every 30 seconds
+2. Invokes Claude Code to fix issues when feedback arrives
+3. Commits and pushes the fixes
+4. Exits when PR is approved (or after 10 iterations)
+
+**Do not skip this step.** The feedback loop ensures PR review comments are addressed promptly.
