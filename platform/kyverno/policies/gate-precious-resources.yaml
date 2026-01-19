@@ -1,0 +1,200 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: gate-precious-resources
+  annotations:
+    policies.kyverno.io/title: Production Precious Resource Gates
+    policies.kyverno.io/category: Crossplane
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/description: >-
+      Prevents deletion and destruction of precious resources in production.
+      Resources marked with confighub.io/precious=true cannot be deleted
+      without explicit approval override. See EPIC-17 and docs/precious-resources.md.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    # =================================================================
+    # DELETE GATE: Block deletion of precious Claims
+    # =================================================================
+    - name: block-delete-precious-claims
+      match:
+        any:
+          - resources:
+              kinds:
+                - messagewall.demo/*/ServerlessEventAppClaim
+              operations:
+                - DELETE
+      preconditions:
+        all:
+          # Only block if precious=true
+          - key: "{{ request.oldObject.metadata.annotations.\"confighub.io/precious\" || '' }}"
+            operator: Equals
+            value: "true"
+          # Only block if delete-gate is enabled (or not explicitly disabled)
+          - key: "{{ request.oldObject.metadata.annotations.\"confighub.io/delete-gate\" || 'enabled' }}"
+            operator: NotEquals
+            value: "disabled"
+          # Allow if break-glass override is present
+          - key: "{{ request.oldObject.metadata.annotations.\"confighub.io/break-glass\" || '' }}"
+            operator: NotEquals
+            value: "approved"
+      validate:
+        message: >-
+          DELETE BLOCKED: This Claim contains precious resources ({{ request.oldObject.metadata.annotations."confighub.io/precious-resources" || 'unspecified' }}).
+
+          Deletion of precious production resources requires explicit approval.
+
+          To proceed with deletion:
+          1. Create an approval request: See docs/precious-resources.md
+          2. Get approval from a platform operator
+          3. Add annotation: confighub.io/break-glass=approved
+          4. Re-attempt deletion within the approval window
+
+          Resource: {{ request.oldObject.metadata.namespace }}/{{ request.oldObject.metadata.name }}
+          Data classification: {{ request.oldObject.metadata.annotations."confighub.io/data-classification" || 'unknown' }}
+        deny: {}
+
+    # =================================================================
+    # DELETE GATE: Block deletion of precious DynamoDB Tables
+    # =================================================================
+    - name: block-delete-precious-dynamodb
+      match:
+        any:
+          - resources:
+              kinds:
+                - dynamodb.aws.upbound.io/*/Table
+              operations:
+                - DELETE
+      preconditions:
+        all:
+          # Check for precious label on the resource
+          - key: "{{ request.oldObject.metadata.labels.\"confighub.io/precious\" || '' }}"
+            operator: Equals
+            value: "true"
+          # Allow if break-glass override
+          - key: "{{ request.oldObject.metadata.annotations.\"confighub.io/break-glass\" || '' }}"
+            operator: NotEquals
+            value: "approved"
+      validate:
+        message: >-
+          DELETE BLOCKED: DynamoDB table {{ request.oldObject.metadata.name }} is marked as precious.
+
+          Direct deletion of DynamoDB tables in production is not allowed.
+          Delete the parent Claim with proper approval instead.
+
+          See docs/precious-resources.md for the approval process.
+        deny: {}
+
+    # =================================================================
+    # DELETE GATE: Block deletion of precious S3 Buckets
+    # =================================================================
+    - name: block-delete-precious-s3
+      match:
+        any:
+          - resources:
+              kinds:
+                - s3.aws.upbound.io/*/Bucket
+              operations:
+                - DELETE
+      preconditions:
+        all:
+          - key: "{{ request.oldObject.metadata.labels.\"confighub.io/precious\" || '' }}"
+            operator: Equals
+            value: "true"
+          - key: "{{ request.oldObject.metadata.annotations.\"confighub.io/break-glass\" || '' }}"
+            operator: NotEquals
+            value: "approved"
+      validate:
+        message: >-
+          DELETE BLOCKED: S3 bucket {{ request.oldObject.metadata.name }} is marked as precious.
+
+          Direct deletion of S3 buckets in production is not allowed.
+          Delete the parent Claim with proper approval instead.
+
+          See docs/precious-resources.md for the approval process.
+        deny: {}
+
+    # =================================================================
+    # DESTROY GATE: Block destructive updates to precious Claims
+    # =================================================================
+    - name: block-destroy-precious-claims
+      match:
+        any:
+          - resources:
+              kinds:
+                - messagewall.demo/*/ServerlessEventAppClaim
+              operations:
+                - UPDATE
+      preconditions:
+        all:
+          # Only for precious resources
+          - key: "{{ request.object.metadata.annotations.\"confighub.io/precious\" || '' }}"
+            operator: Equals
+            value: "true"
+          # Only if destroy-gate is enabled
+          - key: "{{ request.object.metadata.annotations.\"confighub.io/destroy-gate\" || 'enabled' }}"
+            operator: NotEquals
+            value: "disabled"
+          # Allow if break-glass override
+          - key: "{{ request.object.metadata.annotations.\"confighub.io/break-glass\" || '' }}"
+            operator: NotEquals
+            value: "approved"
+      validate:
+        message: >-
+          DESTROY BLOCKED: Cannot change environment of precious Claim from prod.
+
+          Changing the environment would destroy production data.
+          This operation requires explicit approval.
+
+          Current environment: {{ request.oldObject.spec.environment }}
+          Requested environment: {{ request.object.spec.environment }}
+
+          See docs/precious-resources.md for the approval process.
+        deny:
+          conditions:
+            all:
+              # Block if trying to change environment away from prod
+              - key: "{{ request.oldObject.spec.environment }}"
+                operator: Equals
+                value: "prod"
+              - key: "{{ request.object.spec.environment }}"
+                operator: NotEquals
+                value: "prod"
+
+    # =================================================================
+    # DESTROY GATE: Block removal of precious annotation
+    # =================================================================
+    - name: block-remove-precious-annotation
+      match:
+        any:
+          - resources:
+              kinds:
+                - messagewall.demo/*/ServerlessEventAppClaim
+              operations:
+                - UPDATE
+      preconditions:
+        all:
+          # Was precious before
+          - key: "{{ request.oldObject.metadata.annotations.\"confighub.io/precious\" || '' }}"
+            operator: Equals
+            value: "true"
+          # Allow if break-glass
+          - key: "{{ request.object.metadata.annotations.\"confighub.io/break-glass\" || '' }}"
+            operator: NotEquals
+            value: "approved"
+      validate:
+        message: >-
+          DESTROY BLOCKED: Cannot remove precious annotation from production Claim.
+
+          Removing the precious annotation would disable protection gates.
+          This operation requires explicit approval.
+
+          See docs/precious-resources.md for the approval process.
+        deny:
+          conditions:
+            any:
+              # Block if precious annotation is being removed
+              - key: "{{ request.object.metadata.annotations.\"confighub.io/precious\" || '' }}"
+                operator: NotEquals
+                value: "true"

@@ -2,43 +2,48 @@
 
 Last updated: 2026-01-19
 
-## Latest Session: EPIC-17 Precious Resource Identification
+## Latest Session: EPIC-17 Production Gate Enforcement
 
-Completed ISSUE-17.2: defined precious resource convention and updated production Claims.
+Completed ISSUE-17.3: implemented delete/destroy gates via Kyverno policies.
 
 ### What Changed
 
 | Item | Change |
 |------|--------|
-| `docs/precious-resources.md` | New doc defining precious convention, classification, labeling |
-| `examples/claims/messagewall-prod.yaml` | Added `confighub.io/precious` annotations |
-| `scripts/list-precious-units.sh` | Query script for precious units |
-| `docs/confighub-spaces.md` | Added reference to precious-resources.md |
-| ISSUE-17.2 | Marked done |
+| `platform/kyverno/policies/gate-precious-resources.yaml` | Kyverno policy blocking delete/destroy of precious resources |
+| `docs/production-gates.md` | Documentation for gate configuration and override |
+| `scripts/verify-production-gates.sh` | Verification script for gate status |
+| ISSUE-17.3 | Marked done |
 
-### Precious Resource Convention
+### Gate Enforcement
 
-- **Label**: `confighub.io/precious: "true"`
-- **Types**: `confighub.io/precious-resources: "dynamodb,s3"`
-- **Classification**: `confighub.io/data-classification: "customer-data"`
+- **Delete Gate**: Blocks `kubectl delete` on Claims with `precious=true`
+- **Destroy Gate**: Blocks environment changes and annotation removal
+- **Override**: `confighub.io/break-glass=approved` annotation with approval
 
 ### EPIC-17 Status
 
 | Issue | Status | Notes |
 |-------|--------|-------|
 | ISSUE-17.1 | Done | Production space infrastructure |
-| ISSUE-17.2 | Done | Precious identification (this session) |
-| ISSUE-17.3 | Pending | Enforce delete/destroy gates |
+| ISSUE-17.2 | Done | Precious identification |
+| ISSUE-17.3 | Done | Gate enforcement (this session) |
 | ISSUE-17.4 | Pending | Approval workflow for gates |
 | ISSUE-17.5 | Pending | Gate demonstration drill |
 
 ### Next Step
 
-ISSUE-17.3: Enforce delete/destroy gates on all production database units.
+ISSUE-17.4: Define and document the approval workflow to override delete/destroy gates.
 
 ---
 
-## Previous Session: ADR-012 Developer Authoring Surface
+## Previous Session: EPIC-17 Precious Resource Identification
+
+Completed ISSUE-17.2: defined precious resource convention and updated production Claims.
+
+---
+
+## Earlier Session: ADR-012 Developer Authoring Surface
 
 Resolved ISSUE-16.3 by documenting the decision that emerged from prior architectural work.
 
