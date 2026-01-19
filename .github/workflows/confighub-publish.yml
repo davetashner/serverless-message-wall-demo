@@ -1,5 +1,13 @@
 name: Publish to ConfigHub
 
+# Updated per ADR-011: Bidirectional GitOps with ConfigHub as Authority
+#
+# Phase 2: Git → ConfigHub as proposal
+# CI doesn't blindly overwrite ConfigHub. Instead:
+# 1. Check if ConfigHub has changes not in Git (conflict detection)
+# 2. If conflict: fail and require resolution
+# 3. If no conflict: publish as normal
+
 on:
   push:
     branches: [main]
@@ -22,6 +30,11 @@ on:
         type: choice
         options:
           - dev
+      force:
+        description: 'Force publish (skip conflict detection)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   render-and-publish:
@@ -31,6 +44,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for conflict detection
 
       - name: Install cub CLI
         run: |
@@ -101,6 +116,110 @@ jobs:
           CONFIGHUB_WORKER_ID: ${{ secrets.CONFIGHUB_WORKER_ID }}
           CONFIGHUB_WORKER_SECRET: ${{ secrets.CONFIGHUB_WORKER_SECRET }}
 
+      - name: Export current ConfigHub state
+        id: export
+        run: |
+          SPACE="${{ steps.config.outputs.CONFIGHUB_SPACE }}"
+          mkdir -p confighub-current
+
+          echo "Exporting current state from ConfigHub space: $SPACE"
+
+          # Get list of units
+          UNITS=$(cub unit list --space "$SPACE" --format json 2>/dev/null | jq -r '.[].name' 2>/dev/null || echo "")
+
+          if [[ -z "$UNITS" ]]; then
+            echo "No existing units in ConfigHub (first deployment)"
+            echo "first_deployment=true" >> $GITHUB_OUTPUT
+          else
+            echo "first_deployment=false" >> $GITHUB_OUTPUT
+            for unit in $UNITS; do
+              echo "  Exporting: $unit"
+              cub unit export --space "$SPACE" "$unit" > "confighub-current/${unit}.yaml" 2>/dev/null || true
+
+              # Get the last change description to detect source
+              LAST_CHANGE=$(cub unit get --space "$SPACE" "$unit" --format json 2>/dev/null | jq -r '.lastChangeDesc // ""' || echo "")
+              echo "  Last change: $LAST_CHANGE"
+            done
+          fi
+
+      - name: Detect conflicts (Phase 2 of ADR-011)
+        id: conflict
+        if: steps.export.outputs.first_deployment != 'true'
+        run: |
+          echo "## Conflict Detection" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          CONFLICTS=""
+          HAS_CONFLICT=false
+
+          for ch_file in confighub-current/*.yaml; do
+            [[ -f "$ch_file" ]] || continue
+            unit=$(basename "$ch_file" .yaml)
+            git_file="rendered/${unit}.yaml"
+
+            if [[ ! -f "$git_file" ]]; then
+              # Unit exists in ConfigHub but not in Git - this is a conflict
+              echo "⚠️ **CONFLICT**: Unit \`$unit\` exists in ConfigHub but not in Git templates" >> $GITHUB_STEP_SUMMARY
+              CONFLICTS+="- $unit: exists in ConfigHub but not in Git\n"
+              HAS_CONFLICT=true
+              continue
+            fi
+
+            # Compare YAML content (normalize for comparison)
+            CH_CONTENT=$(yq eval -P "$ch_file" 2>/dev/null || cat "$ch_file")
+            GIT_CONTENT=$(yq eval -P "$git_file" 2>/dev/null || cat "$git_file")
+
+            if [[ "$CH_CONTENT" != "$GIT_CONTENT" ]]; then
+              # Check if ConfigHub was modified outside of CI
+              # Look for change descriptions that don't start with "CI:"
+              LAST_CHANGE=$(cub unit get --space "${{ steps.config.outputs.CONFIGHUB_SPACE }}" "$unit" --format json 2>/dev/null | jq -r '.lastChangeDesc // ""' || echo "")
+
+              if [[ "$LAST_CHANGE" != CI:* ]]; then
+                # ConfigHub was modified by something other than CI
+                echo "⚠️ **CONFLICT**: Unit \`$unit\` was modified in ConfigHub (not by CI)" >> $GITHUB_STEP_SUMMARY
+                echo "  Last change: \`$LAST_CHANGE\`" >> $GITHUB_STEP_SUMMARY
+                CONFLICTS+="- $unit: modified in ConfigHub (last change: $LAST_CHANGE)\n"
+                HAS_CONFLICT=true
+
+                # Show diff
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "Diff (ConfigHub vs Git):" >> $GITHUB_STEP_SUMMARY
+                echo '```diff' >> $GITHUB_STEP_SUMMARY
+                diff -u "$git_file" "$ch_file" | head -30 >> $GITHUB_STEP_SUMMARY || true
+                echo '```' >> $GITHUB_STEP_SUMMARY
+              else
+                echo "✅ Unit \`$unit\`: differs but last change was from CI (expected divergence)" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "✅ Unit \`$unit\`: matches" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          echo "has_conflict=$HAS_CONFLICT" >> $GITHUB_OUTPUT
+          echo "conflicts<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$CONFLICTS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Fail on conflict (unless forced)
+        if: steps.conflict.outputs.has_conflict == 'true' && github.event.inputs.force != 'true' && github.ref == 'refs/heads/main'
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ❌ Publish Blocked: Conflicts Detected" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ConfigHub has changes that are not in Git. Per ADR-011, CI cannot silently overwrite ConfigHub changes." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Resolution Options:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Accept ConfigHub changes**: Run the 'Sync ConfigHub to Git' workflow to import ConfigHub state to Git, then re-run this workflow." >> $GITHUB_STEP_SUMMARY
+          echo "2. **Revert ConfigHub changes**: Use ConfigHub to roll back to a previous revision, then re-run this workflow." >> $GITHUB_STEP_SUMMARY
+          echo "3. **Force publish (use with caution)**: Re-run with \`force: true\` to overwrite ConfigHub. This will lose the ConfigHub-side changes." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Conflicts:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.conflict.outputs.conflicts }}" >> $GITHUB_STEP_SUMMARY
+
+          exit 1
+
       - name: Preview changes (PR only)
         if: github.event_name == 'pull_request'
         run: |
@@ -129,8 +248,8 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
           done
 
-      - name: Publish to ConfigHub (main only)
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - name: Publish to ConfigHub (main only, no conflicts)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (steps.conflict.outputs.has_conflict != 'true' || github.event.inputs.force == 'true')
         run: |
           SPACE="${{ steps.config.outputs.CONFIGHUB_SPACE }}"
           COMMIT_SHA="${{ github.sha }}"
@@ -138,6 +257,12 @@ jobs:
 
           echo "## ConfigHub Publish Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
+            echo "⚠️ **Force publish enabled** - Overwriting ConfigHub state" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "Publishing to space \`$SPACE\` from commit \`${COMMIT_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -145,8 +270,14 @@ jobs:
             unit=$(basename "$yaml" .yaml)
             echo "Updating unit: $unit"
 
+            # Include Git commit info in change description for traceability
+            CHANGE_DESC="CI: $COMMIT_MSG (${COMMIT_SHA:0:7})"
+            if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
+              CHANGE_DESC="CI (forced): $COMMIT_MSG (${COMMIT_SHA:0:7})"
+            fi
+
             if cub unit update --space "$SPACE" "$unit" "$yaml" \
-                --change-desc "CI: $COMMIT_MSG (${COMMIT_SHA:0:7})" \
+                --change-desc "$CHANGE_DESC" \
                 --wait; then
               echo "✅ **$unit**: Updated successfully" >> $GITHUB_STEP_SUMMARY
             else
@@ -157,3 +288,10 @@ jobs:
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "All units published successfully." >> $GITHUB_STEP_SUMMARY
+
+          # Record the Git commit associated with this ConfigHub state
+          # This helps with future conflict detection
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tracking info:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Git commit: \`${COMMIT_SHA}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

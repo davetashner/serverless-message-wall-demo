@@ -1,7 +1,17 @@
 # ADR-011: Bidirectional GitOps with ConfigHub as Authority
 
 ## Status
-Proposed
+Accepted
+
+## Implementation
+
+The three-phase sync model is implemented via:
+
+- **Phase 1**: `scripts/sync-confighub-to-git.sh` and `.github/workflows/confighub-sync-to-git.yml`
+- **Phase 2**: Updated `.github/workflows/confighub-publish.yml` with conflict detection
+- **Phase 3**: `scripts/capture-drift-to-confighub.sh`
+
+See [docs/bidirectional-sync.md](../bidirectional-sync.md) for operational documentation
 
 ## Context
 
