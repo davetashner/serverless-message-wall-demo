@@ -10,20 +10,19 @@ data:
     metadata:
       name: confighub
     spec:
-      version: v1.0
+      # Note: Omitting 'version' so socket is named 'confighub.sock' not 'confighub-v1.0.sock'
 
       # Discovery: identify when this plugin should be used
-      # ArgoCD uses this to auto-detect the plugin for a given source
+      # Always return true since this plugin is explicitly requested via source.plugin.name
+      # The actual ConfigHub space is specified via source.plugin.env.CONFIGHUB_SPACE
       discover:
         find:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # This plugin handles ConfigHub spaces
-              # Check if CONFIGHUB_SPACE env var is set (passed from Application spec)
-              if [ -n "$CONFIGHUB_SPACE" ]; then
-                echo "confighub"
-              fi
+              # Always match - this plugin is explicitly requested in Application spec
+              # The git repo is just a placeholder; actual content comes from ConfigHub
+              echo "confighub"
 
       # Init: authenticate with ConfigHub as a worker
       init:

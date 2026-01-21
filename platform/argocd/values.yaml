@@ -47,6 +47,13 @@ repoServer:
         runAsNonRoot: true
         runAsUser: 999
       env:
+        # Set HOME to writable directory for cub CLI config
+        - name: HOME
+          value: /tmp
+        # Note: CONFIGHUB_SPACE should come from Application spec's source.plugin.env
+        # but we set a default here for testing. The Application's env will override.
+        - name: CONFIGHUB_SPACE
+          value: messagewall-prod
         - name: CONFIGHUB_WORKER_ID
           valueFrom:
             secretKeyRef:

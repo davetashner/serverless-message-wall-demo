@@ -13,10 +13,11 @@ spec:
 
   # Source: ConfigHub space via CMP
   source:
-    # RepoURL is required but not used by CMP; set to a placeholder
-    repoURL: https://confighub.example.com/messagewall-prod
-    # Path is required but not used by CMP
-    path: .
+    # RepoURL is required by ArgoCD even for CMP plugins. ArgoCD clones this repo
+    # but the CMP plugin ignores the git content and fetches from ConfigHub instead.
+    repoURL: https://github.com/davetashner/serverless-message-wall-demo.git
+    # Path is required but not used by CMP; points to a directory that exists
+    path: platform
     # Use the ConfigHub CMP plugin
     plugin:
       name: confighub
