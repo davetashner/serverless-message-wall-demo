@@ -1,124 +1,138 @@
 # Current Focus
 
-Last updated: 2026-01-19
+Last updated: 2026-01-28
 
-## Latest Session: EPIC-17 Precious Resource Identification
+## Weekend Goal: E2E Demo Ready by Next Week
 
-Completed ISSUE-17.2: defined precious resource convention and updated production Claims.
-
-### What Changed
-
-| Item | Change |
-|------|--------|
-| `docs/precious-resources.md` | New doc defining precious convention, classification, labeling |
-| `examples/claims/messagewall-prod.yaml` | Added `confighub.io/precious` annotations |
-| `scripts/list-precious-units.sh` | Query script for precious units |
-| `docs/confighub-spaces.md` | Added reference to precious-resources.md |
-| ISSUE-17.2 | Marked done |
-
-### Precious Resource Convention
-
-- **Label**: `confighub.io/precious: "true"`
-- **Types**: `confighub.io/precious-resources: "dynamodb,s3"`
-- **Classification**: `confighub.io/data-classification: "customer-data"`
-
-### EPIC-17 Status
-
-| Issue | Status | Notes |
-|-------|--------|-------|
-| ISSUE-17.1 | Done | Production space infrastructure |
-| ISSUE-17.2 | Done | Precious identification (this session) |
-| ISSUE-17.3 | Pending | Enforce delete/destroy gates |
-| ISSUE-17.4 | Pending | Approval workflow for gates |
-| ISSUE-17.5 | Pending | Gate demonstration drill |
-
-### Next Step
-
-ISSUE-17.3: Enforce delete/destroy gates on all production database units.
+Target: Complete EPIC-36 to have a compelling multi-cluster demo showing:
+1. **ConfigHub as central authority** - managing both infrastructure and workloads
+2. **Observable microservices** - 10 pods with distinct names, sparse logs visible in kubectl
+3. **Crossplane reconciliation** - delete a Lambda, watch it heal back
 
 ---
 
-## Previous Session: ADR-012 Developer Authoring Surface
+## EPIC-36 Implementation Status
 
-Resolved ISSUE-16.3 by documenting the decision that emerged from prior architectural work.
+| Issue | Title | Status |
+|-------|-------|--------|
+| ISSUE-36.1 | Create workload cluster bootstrap script | **DONE** |
+| ISSUE-36.2 | Install ArgoCD on workload cluster | **DONE** |
+| ISSUE-36.3 | Design 10 microservices | **DONE** |
+| ISSUE-36.4 | Create container image | **DONE** |
+| ISSUE-36.5 | Create K8s manifests | **DONE** |
+| ISSUE-36.6 | Publish to ConfigHub | **DONE** (script ready) |
+| ISSUE-36.7 | Multi-cluster demo script | **DONE** |
+| ISSUE-36.8 | Reconciliation demo script | **DONE** |
 
-### Key Decision
+### Files Created
 
-**Developers author Crossplane Claims directly as the canonical authoring surface.**
+**Bootstrap scripts:**
+- `scripts/bootstrap-workload-cluster.sh` - Create kind cluster "workload"
+- `scripts/bootstrap-workload-argocd.sh` - Install ArgoCD on workload cluster
+- `scripts/setup-workload-confighub-auth.sh` - Configure ConfigHub credentials
+- `scripts/publish-workloads-to-confighub.sh` - Publish manifests to ConfigHub
 
-- Claims are stored in ConfigHub (ADR-010)
-- Claims sit at the Intent/Authority boundary (four-plane model)
-- Claims are minimal (8 fields, no AWS concepts)
-- OAM is optional convenience layer that compiles to Claims
+**Container image:**
+- `app/microservices/Dockerfile` - Minimal Alpine image
+- `app/microservices/entrypoint.sh` - Service-specific logging
+- `app/microservices/build.sh` - Build script
 
-### What Changed
+**Kubernetes manifests:**
+- `infra/workloads/namespace.yaml`
+- `infra/workloads/heartbeat.yaml`
+- `infra/workloads/ticker.yaml`
+- `infra/workloads/greeter.yaml`
+- `infra/workloads/counter.yaml`
+- `infra/workloads/weather.yaml`
+- `infra/workloads/quoter.yaml`
+- `infra/workloads/pinger.yaml`
+- `infra/workloads/auditor.yaml`
+- `infra/workloads/reporter.yaml`
+- `infra/workloads/sentinel.yaml`
 
-| Item | Change |
-|------|--------|
-| `docs/decisions/012-developer-authoring-surface.md` | New ADR documenting the decision |
-| ISSUE-16.3 | Marked done |
-| ISSUE-16.4 | Marked done (examples already exist) |
-| ISSUE-16.1, 16.2 | Marked as optional per ADR-012 |
+**ArgoCD config:**
+- `platform/argocd/values-workload.yaml` - Helm values for workload cluster
+- `platform/argocd/application-workloads.yaml` - ArgoCD Application
 
-### EPIC-16 Status
-
-| Issue | Status | Notes |
-|-------|--------|-------|
-| ISSUE-16.1 | Optional | OAM vocabulary (nice-to-have) |
-| ISSUE-16.2 | Optional | OAM compiler (depends on 16.1) |
-| ISSUE-16.3 | Done | ADR-012 |
-| ISSUE-16.4 | Done | Examples exist |
+**Demo scripts:**
+- `scripts/demo-multi-cluster.sh` - Multi-cluster narrative demo
+- `scripts/demo-reconciliation.sh` - Crossplane self-healing demo
 
 ---
 
-## Previous Session: Commit Standards & Agentic PR Workflow
+## Quick Start: Run the Demo
 
-Implemented comprehensive commit and PR standards with enforcement.
+```bash
+# 1. Create both clusters
+scripts/bootstrap-kind.sh              # actuator cluster
+scripts/bootstrap-workload-cluster.sh  # workload cluster
 
-### Key Standards
+# 2. Build and load microservice image
+cd app/microservices && ./build.sh
+kind load docker-image messagewall-microservice:latest --name workload
 
-- **Commits**: Conventional Commits format required (`type(scope): Subject`)
-- **PRs**: Must include `## Evidence` section (except docs-only)
-- **Review**: Run `./scripts/review-changes.sh` before pushing
+# 3. Install ArgoCD on both clusters
+scripts/bootstrap-argocd.sh           # actuator
+scripts/bootstrap-workload-argocd.sh  # workload
+
+# 4. Configure ConfigHub credentials
+scripts/setup-argocd-confighub-auth.sh        # actuator
+scripts/setup-workload-confighub-auth.sh      # workload
+
+# 5. Publish microservices to ConfigHub
+scripts/publish-workloads-to-confighub.sh --apply
+
+# 6. Apply ArgoCD Applications
+kubectl apply -f platform/argocd/application-dev.yaml --context kind-actuator
+kubectl apply -f platform/argocd/application-workloads.yaml --context kind-workload
+
+# 7. Run demos
+scripts/demo-multi-cluster.sh
+scripts/demo-reconciliation.sh
+```
 
 ---
 
-## Previous Session: Enterprise Epics
+## Microservices Reference
 
-Added **15 new epics (EPIC-21 through EPIC-35)** for enterprise-scale platform features.
+| Name | Interval | Log Example |
+|------|----------|-------------|
+| heartbeat | 30s | `[heartbeat] pulse #127 - all systems nominal` |
+| ticker | 45s | `[ticker] 2026-01-28T14:32:00Z - tick` |
+| greeter | 40s | `[greeter] Hello from pod greeter-7f8b9!` |
+| counter | 20s | `[counter] count=4582` |
+| weather | 60s | `[weather] Current: sunny, 72F` |
+| quoter | 55s | `[quoter] "The best way to predict..."` |
+| pinger | 25s | `[pinger] upstream check: 23ms, status=ok` |
+| auditor | 35s | `[auditor] event=config_read user=system` |
+| reporter | 50s | `[reporter] summary: 10 pods, 0 alerts` |
+| sentinel | 45s | `[sentinel] watchdog healthy` |
 
-### Recommended Phasing
+---
 
-| Phase | Focus | Epics |
-|-------|-------|-------|
-| A | Multi-team foundation | EPIC-22, 25, 28, 29 |
-| B | Operational maturity | EPIC-21, 26, 30 |
-| C | Scale and resilience | EPIC-23, 24, 32, 34 |
-| D | Advanced automation | EPIC-27, 31, 33, 35 |
+## Demo Narrative
 
-## Pending Epics (Original Backlog)
+**Opening:** "ConfigHub is the single authority for all configuration."
 
-| Epic | Title | Open Issues | Status |
-|------|-------|-------------|--------|
-| EPIC-11 | XRD abstraction | 5 | Blocked (ask user) |
-| EPIC-16 | Developer authoring/OAM | 2 (optional) | Core decisions done |
-| EPIC-17 | Production protection gates | 5 | Pending |
-| EPIC-19 | Multi-tenancy design | 3 | Pending |
+1. Show both clusters: `kubectl config get-contexts`
+2. Show Crossplane pods in actuator cluster
+3. Show microservice pods in workload cluster (10 distinct names)
+4. Tail logs to show activity
+5. Show ConfigHub spaces (messagewall-dev, messagewall-workloads)
+6. Show ArgoCD sync status on both clusters
+7. **Reconciliation demo:** Delete Lambda in AWS, watch Crossplane recreate it
+8. **Closing:** "One authority, multiple actuators, continuous enforcement"
 
-## Not Ready Yet
+---
 
-| Item | Why | Blocked By |
-|------|-----|------------|
-| EPIC-11 | User indicated not ready | Ask user |
-| EPIC-16.1, 16.2 | OAM is optional per ADR-012 | User decision to pursue |
-| EPIC-19 | Deferred | User decision |
-| EPIC-21–35 | Design-only, no issues | Break down when ready |
+## Previous Work
 
-## Recommended Next Items
+### EPIC-17 Status (Paused)
 
-**Demo/foundation track:**
-1. EPIC-17 — Production protection gates (5 issues)
-
-**Enterprise scale (need issue breakdown):**
-1. EPIC-28 — Self-service tenant onboarding
-2. EPIC-29 — Enterprise identity and access
+| Issue | Status |
+|-------|--------|
+| ISSUE-17.1 | Done |
+| ISSUE-17.2 | Done |
+| ISSUE-17.3 | Pending |
+| ISSUE-17.4 | Pending |
+| ISSUE-17.5 | Pending |

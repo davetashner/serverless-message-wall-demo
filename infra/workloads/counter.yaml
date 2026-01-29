@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: counter
+  namespace: microservices
+  labels:
+    app: counter
+    tier: microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: counter
+  template:
+    metadata:
+      labels:
+        app: counter
+        tier: microservices
+    spec:
+      containers:
+        - name: counter
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: counter
+            - name: LOG_INTERVAL
+              value: "20"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

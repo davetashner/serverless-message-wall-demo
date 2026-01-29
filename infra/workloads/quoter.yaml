@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quoter
+  namespace: microservices
+  labels:
+    app: quoter
+    tier: microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quoter
+  template:
+    metadata:
+      labels:
+        app: quoter
+        tier: microservices
+    spec:
+      containers:
+        - name: quoter
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: quoter
+            - name: LOG_INTERVAL
+              value: "55"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

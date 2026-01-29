@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heartbeat
+  namespace: microservices
+  labels:
+    app: heartbeat
+    tier: microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: heartbeat
+  template:
+    metadata:
+      labels:
+        app: heartbeat
+        tier: microservices
+    spec:
+      containers:
+        - name: heartbeat
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never  # Use local image loaded via kind
+          env:
+            - name: SERVICE_NAME
+              value: heartbeat
+            - name: LOG_INTERVAL
+              value: "30"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

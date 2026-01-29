@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather
+  namespace: microservices
+  labels:
+    app: weather
+    tier: microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weather
+  template:
+    metadata:
+      labels:
+        app: weather
+        tier: microservices
+    spec:
+      containers:
+        - name: weather
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: weather
+            - name: LOG_INTERVAL
+              value: "60"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

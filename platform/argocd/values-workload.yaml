@@ -1,0 +1,120 @@
+# ArgoCD Helm values for workload cluster
+# Single replicas, insecure mode for local kind cluster
+
+global:
+  domain: argocd-workload.local
+
+# Server configuration
+server:
+  replicas: 1
+  extraArgs:
+    - --insecure  # Disable TLS for local kind cluster
+  service:
+    type: ClusterIP
+
+# Controller configuration
+controller:
+  replicas: 1
+
+# Repo server configuration with ConfigHub CMP sidecar
+repoServer:
+  replicas: 1
+
+  # Init container to download cub CLI
+  initContainers:
+    - name: download-cub
+      image: alpine:3.19
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -e
+          echo "Installing cub CLI..."
+          apk add --no-cache curl bash
+          curl -fsSL https://hub.confighub.com/cub/install.sh | bash
+          cp /root/.confighub/bin/cub /cub/cub
+          chmod +x /cub/cub
+          echo "cub CLI installed successfully"
+      volumeMounts:
+        - name: cub-bin
+          mountPath: /cub
+
+  # CMP sidecar container
+  extraContainers:
+    - name: confighub-cmp
+      image: alpine:3.19
+      command: ["/var/run/argocd/argocd-cmp-server"]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+      env:
+        # Set HOME to writable directory for cub CLI config
+        - name: HOME
+          value: /tmp
+        # Default space for workloads
+        - name: CONFIGHUB_SPACE
+          value: messagewall-workloads
+        - name: CONFIGHUB_WORKER_ID
+          valueFrom:
+            secretKeyRef:
+              name: confighub-actuator-credentials
+              key: CONFIGHUB_WORKER_ID
+              optional: true
+        - name: CONFIGHUB_WORKER_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: confighub-actuator-credentials
+              key: CONFIGHUB_WORKER_SECRET
+              optional: true
+      volumeMounts:
+        - name: var-files
+          mountPath: /var/run/argocd
+        - name: plugins
+          mountPath: /home/argocd/cmp-server/plugins
+        - name: cmp-tmp
+          mountPath: /tmp
+        - name: cmp-plugin-config
+          mountPath: /home/argocd/cmp-server/config/plugin.yaml
+          subPath: plugin.yaml
+        - name: cub-bin
+          mountPath: /usr/local/bin/cub
+          subPath: cub
+
+  # Additional volumes
+  volumes:
+    - name: cmp-plugin-config
+      configMap:
+        name: argocd-cmp-confighub
+    - name: cub-bin
+      emptyDir: {}
+    - name: cmp-tmp
+      emptyDir: {}
+
+# Redis configuration
+redis:
+  enabled: true
+
+# Dex (SSO) - disabled for demo
+dex:
+  enabled: false
+
+# Application Set controller - disabled for demo simplicity
+applicationSet:
+  enabled: false
+
+# Notifications controller - disabled for demo
+notifications:
+  enabled: false
+
+# Configs
+configs:
+  # Repository credentials (ConfigHub doesn't need Git credentials)
+  repositories: {}
+
+  # ConfigMap settings
+  cm:
+    # Enable CMP
+    configManagementPlugins: ""
+
+  # RBAC - admin access for demo
+  rbac:
+    policy.default: role:admin

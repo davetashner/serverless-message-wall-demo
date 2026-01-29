@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pinger
+  namespace: microservices
+  labels:
+    app: pinger
+    tier: microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pinger
+  template:
+    metadata:
+      labels:
+        app: pinger
+        tier: microservices
+    spec:
+      containers:
+        - name: pinger
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: pinger
+            - name: LOG_INTERVAL
+              value: "25"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"
