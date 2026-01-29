@@ -165,7 +165,12 @@ Key technical decisions are documented in `docs/decisions/`:
 - **ADR-005**: ConfigHub Integration Architecture
 - **ADR-006**: Crossplane Installation and AWS IAM Strategy
 - **ADR-007**: Kyverno Policy Enforcement for AWS Resource Tags
+- **ADR-008**: Setup Wizard Design
 - **ADR-009**: ArgoCD Config Management Plugin for ConfigHub Sync
+- **ADR-010**: ConfigHub Stores Claims (not expanded resources)
+- **ADR-011**: Bidirectional GitOps with ConfigHub as Authority
+- **ADR-012**: Developer Authoring Surface (Claims as canonical)
+- **ADR-013**: ConfigHub Multi-Tenancy Model (space-per-team-per-env)
 
 ## Directory Structure
 

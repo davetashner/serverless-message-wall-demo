@@ -69,9 +69,9 @@ load_config() {
 
 get_function_url() {
     local url
-    
-    log_info "Retrieving Function URL from Kubernetes..."
-    
+
+    log_info "Retrieving Function URL from Kubernetes..." >&2
+
     # Check if cluster is reachable
     if ! kubectl cluster-info --context "${CLUSTER_CONTEXT}" &> /dev/null; then
         log_error "Cannot reach cluster '${CLUSTER_CONTEXT}'"
