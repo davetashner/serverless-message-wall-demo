@@ -63,8 +63,11 @@ if ! command -v cub &> /dev/null; then
     exit 1
 fi
 
-if ! cub auth status &> /dev/null; then
-    echo "Error: Not authenticated to ConfigHub. Run: cub auth login"
+# Check if authenticated by trying to list spaces
+AUTH_CHECK=$(cub space list 2>&1 || true)
+if echo "$AUTH_CHECK" | grep -qE "(not authenticated|worker associated|401|403|expired)"; then
+    echo "Error: ConfigHub credentials expired or invalid."
+    echo "Run: cub auth login"
     exit 1
 fi
 

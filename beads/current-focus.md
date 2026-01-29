@@ -43,35 +43,37 @@ scripts/bootstrap-kind.sh              # actuator cluster
 scripts/bootstrap-workload-cluster.sh  # workload cluster
 
 # 2. Build and load microservice image
-cd app/microservices && ./build.sh
+cd app/microservices && ./build.sh && cd ../..
 kind load docker-image messagewall-microservice:latest --name workload
 
 # 3. Install Crossplane and Kyverno on actuator
 scripts/bootstrap-crossplane.sh
-scripts/bootstrap-aws-providers.sh
+scripts/bootstrap-aws-providers.sh     # auto-creates AWS credentials from aws cli
 scripts/bootstrap-kyverno.sh
 
 # 4. Install ArgoCD on both clusters
 scripts/bootstrap-argocd.sh              # actuator
 scripts/bootstrap-workload-argocd.sh     # workload
 
-# 5. Configure ConfigHub credentials
-scripts/setup-argocd-confighub-auth.sh        # actuator
-scripts/setup-workload-confighub-auth.sh      # workload
+# 5. Create ConfigHub spaces (BEFORE auth setup - spaces must exist first)
+cub space create messagewall-dev --label Environment=dev --label Application=messagewall
+scripts/setup-order-platform-spaces.sh   # creates 10 Order Platform spaces
 
-# 6. Create ConfigHub spaces for Order Platform
-scripts/setup-order-platform-spaces.sh
+# 6. Configure ConfigHub credentials (requires spaces to exist)
+scripts/setup-argocd-confighub-auth.sh        # actuator - creates worker in messagewall-dev
+scripts/setup-workload-confighub-auth.sh      # workload - creates worker in order-platform-ops-dev
 
 # 7. Publish Order Platform manifests to ConfigHub
 scripts/publish-order-platform.sh --apply
 
-# 8. Apply ArgoCD configurations
-kubectl apply -f platform/argocd/application-dev.yaml --context kind-actuator
+# 8. Restart ArgoCD repo-servers and apply configurations
+kubectl rollout restart deployment argocd-repo-server -n argocd --context kind-actuator
+kubectl rollout restart deployment argocd-repo-server -n argocd --context kind-workload
 kubectl apply -f platform/argocd/applicationset-order-platform.yaml --context kind-workload
 
-# 9. Run demos
-scripts/demo-multi-cluster.sh
-scripts/demo-reconciliation.sh
+# 9. Verify deployment
+kubectl get applications -n argocd --context kind-workload
+kubectl get pods --all-namespaces --context kind-workload | grep -E '^(platform|data|customer|integrations|compliance)'
 ```
 
 ---

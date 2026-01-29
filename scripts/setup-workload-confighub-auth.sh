@@ -103,6 +103,22 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
         exit 1
     fi
 
+    # Check if authenticated by trying to list spaces
+    AUTH_CHECK=$(cub space list 2>&1 || true)
+    if echo "$AUTH_CHECK" | grep -qE "(not authenticated|worker associated|401|403|expired)"; then
+        echo "Error: ConfigHub credentials expired or invalid."
+        echo "Run: cub auth login"
+        exit 1
+    fi
+
+    # Check if space exists
+    if ! echo "$AUTH_CHECK" | grep -q "^${SPACE} "; then
+        echo "Error: ConfigHub space '${SPACE}' does not exist."
+        echo "Create Order Platform spaces first with:"
+        echo "  scripts/setup-order-platform-spaces.sh"
+        exit 1
+    fi
+
     WORKER_NAME="argocd-reader"
 
     if [[ "${DRY_RUN}" == "true" ]]; then

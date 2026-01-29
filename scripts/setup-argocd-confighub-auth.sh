@@ -100,13 +100,23 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
         exit 1
     fi
 
-    # Check if authenticated
-    if ! cub auth status &> /dev/null; then
-        echo "Error: Not authenticated to ConfigHub. Run: cub auth login"
+    # Check if authenticated by trying to list spaces
+    AUTH_CHECK=$(cub space list 2>&1 || true)
+    if echo "$AUTH_CHECK" | grep -qE "(not authenticated|worker associated|401|403|expired)"; then
+        echo "Error: ConfigHub credentials expired or invalid."
+        echo "Run: cub auth login"
         exit 1
     fi
 
     WORKER_NAME="actuator-sync-$(date +%Y%m%d)"
+
+    # Check if space exists
+    if ! cub space list 2>/dev/null | grep -q "^${SPACE} "; then
+        echo "Error: ConfigHub space '${SPACE}' does not exist."
+        echo "Create it first with:"
+        echo "  cub space create ${SPACE} --label Environment=dev --label Application=messagewall"
+        exit 1
+    fi
 
     if [[ "${DRY_RUN}" == "true" ]]; then
         echo "[DRY RUN] Would create worker: ${WORKER_NAME} in space: ${SPACE}"
@@ -116,8 +126,7 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
         # Create worker (may already exist, that's ok with --allow-exists)
         if ! cub worker create --space "${SPACE}" "${WORKER_NAME}" --allow-exists 2>&1; then
             echo ""
-            echo "If the space doesn't exist, create it first:"
-            echo "  cub space create ${SPACE}"
+            echo "Failed to create worker. Check ConfigHub connectivity."
             exit 1
         fi
 
