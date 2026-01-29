@@ -7,8 +7,23 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-KUBE_CONTEXT="${KUBE_CONTEXT:-kind-actuator}"
-CONFIGHUB_SPACES="${CONFIGHUB_SPACES:-messagewall-dev messagewall-prod}"
+# All ConfigHub spaces to clean up
+CONFIGHUB_SPACES=(
+    # Messagewall infrastructure
+    messagewall-dev
+    messagewall-prod
+    # Order Platform - 5 teams × 2 environments
+    order-platform-ops-dev
+    order-platform-ops-prod
+    order-data-dev
+    order-data-prod
+    order-customer-dev
+    order-customer-prod
+    order-integrations-dev
+    order-integrations-prod
+    order-compliance-dev
+    order-compliance-prod
+)
 
 echo ""
 echo "═══════════════════════════════════════════════════════"
@@ -16,9 +31,12 @@ echo "  FULL TEARDOWN"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 echo -e "${RED}This will destroy:${NC}"
-echo "  • ArgoCD applications"
+echo "  • ArgoCD applications (both clusters)"
 echo "  • All AWS resources managed by Crossplane"
-echo "  • ConfigHub workers, units, and spaces"
+echo "  • ConfigHub workers, units, and ${#CONFIGHUB_SPACES[@]} spaces:"
+for SPACE in "${CONFIGHUB_SPACES[@]}"; do
+    echo "      - $SPACE"
+done
 echo "  • Kind clusters (actuator, workload)"
 echo ""
 read -p "Are you sure? (yes/no) " -r
@@ -28,25 +46,31 @@ if [[ ! $REPLY == "yes" ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-# Step 1: Delete ArgoCD applications
+# Step 1: Delete ArgoCD applications from BOTH clusters
 # This triggers Crossplane to delete resources, which deletes AWS resources
 # ─────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Step 1: Delete ArgoCD applications${NC}"
-echo "ArgoCD apps keep Crossplane resources alive via self-heal..."
+echo -e "${YELLOW}Step 1: Delete ArgoCD applications (both clusters)${NC}"
+echo "ArgoCD apps keep resources alive via self-heal..."
 
-if kubectl get applications -n argocd --context "$KUBE_CONTEXT" &>/dev/null; then
-    APPS=$(kubectl get applications -n argocd --context "$KUBE_CONTEXT" -o name 2>/dev/null || true)
-    if [[ -n "$APPS" ]]; then
-        echo "Deleting ArgoCD applications..."
-        kubectl delete applications --all -n argocd --context "$KUBE_CONTEXT" --wait=true
-        echo -e "${GREEN}ArgoCD applications deleted${NC}"
+for CLUSTER in kind-actuator kind-workload; do
+    echo ""
+    echo "Cluster: $CLUSTER"
+    if kubectl get applications -n argocd --context "$CLUSTER" &>/dev/null; then
+        APPS=$(kubectl get applications -n argocd --context "$CLUSTER" -o name 2>/dev/null || true)
+        if [[ -n "$APPS" ]]; then
+            echo "  Deleting ArgoCD applications..."
+            kubectl delete applications --all -n argocd --context "$CLUSTER" --wait=true
+            # Also delete ApplicationSets if any
+            kubectl delete applicationsets --all -n argocd --context "$CLUSTER" --wait=true 2>/dev/null || true
+            echo -e "  ${GREEN}ArgoCD applications deleted${NC}"
+        else
+            echo "  No ArgoCD applications found"
+        fi
     else
-        echo "No ArgoCD applications found"
+        echo "  ArgoCD not reachable, skipping"
     fi
-else
-    echo "ArgoCD not reachable, skipping"
-fi
+done
 
 # ─────────────────────────────────────────────────────────────
 # Step 2: Wait for Crossplane to delete AWS resources
@@ -54,20 +78,20 @@ fi
 echo ""
 echo -e "${YELLOW}Step 2: Wait for Crossplane AWS cleanup${NC}"
 
-if kubectl get managed --context "$KUBE_CONTEXT" &>/dev/null; then
+if kubectl get managed --context kind-actuator &>/dev/null; then
     echo "Waiting for AWS resources to be deleted (up to 5 minutes)..."
     for i in {1..60}; do
-        REMAINING=$(kubectl get managed --context "$KUBE_CONTEXT" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        REMAINING=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/null | wc -l | tr -d ' ')
         if [[ "$REMAINING" -eq 0 ]]; then
             echo -e "${GREEN}All Crossplane managed resources deleted${NC}"
             break
         fi
 
         # Check for stuck resources
-        STUCK=$(kubectl get managed --context "$KUBE_CONTEXT" 2>/dev/null | grep -E 'False.*False' || true)
+        STUCK=$(kubectl get managed --context kind-actuator 2>/dev/null | grep -E 'False.*False' || true)
         if [[ -n "$STUCK" ]]; then
             echo -e "${CYAN}Some resources are stuck. Checking issues...${NC}"
-            kubectl get managed --context "$KUBE_CONTEXT" 2>/dev/null | grep -E 'False.*False' | head -5
+            kubectl get managed --context kind-actuator 2>/dev/null | grep -E 'False.*False' | head -5
             echo ""
             echo -e "${CYAN}Common fixes:${NC}"
             echo "  • S3 buckets not empty: aws s3 rm s3://BUCKET --recursive"
@@ -80,71 +104,116 @@ if kubectl get managed --context "$KUBE_CONTEXT" &>/dev/null; then
     done
 
     # Final check
-    REMAINING=$(kubectl get managed --context "$KUBE_CONTEXT" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    REMAINING=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/null | wc -l | tr -d ' ')
     if [[ "$REMAINING" -gt 0 ]]; then
         echo -e "${YELLOW}Warning: $REMAINING resources still exist${NC}"
-        kubectl get managed --context "$KUBE_CONTEXT" 2>/dev/null
+        kubectl get managed --context kind-actuator 2>/dev/null
     fi
 else
     echo "Actuator cluster not reachable, skipping Crossplane cleanup"
 fi
 
 # ─────────────────────────────────────────────────────────────
-# Step 3: Delete ConfigHub namespace (stops workers)
+# Step 3: Delete ConfigHub namespace from BOTH clusters (stops workers)
 # ─────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Step 3: Stop ConfigHub workers in cluster${NC}"
+echo -e "${YELLOW}Step 3: Stop ConfigHub workers (both clusters)${NC}"
 
-if kubectl get namespace confighub --context "$KUBE_CONTEXT" &>/dev/null; then
-    echo "Deleting confighub namespace..."
-    kubectl delete namespace confighub --context "$KUBE_CONTEXT" --wait=true
-    echo -e "${GREEN}ConfigHub namespace deleted${NC}"
-    echo "Waiting for workers to disconnect..."
-    sleep 5
-else
-    echo "ConfigHub namespace not found"
-fi
+for CLUSTER in kind-actuator kind-workload; do
+    echo ""
+    echo "Cluster: $CLUSTER"
+    if kubectl get namespace confighub --context "$CLUSTER" &>/dev/null; then
+        echo "  Deleting confighub namespace..."
+        kubectl delete namespace confighub --context "$CLUSTER" --wait=true
+        echo -e "  ${GREEN}ConfigHub namespace deleted${NC}"
+    else
+        echo "  ConfigHub namespace not found"
+    fi
+done
+
+echo "Waiting for workers to disconnect..."
+sleep 5
 
 # ─────────────────────────────────────────────────────────────
-# Step 4: Clean up ConfigHub spaces
-# Order: workers -> units -> spaces
+# Step 4: Clean up ALL ConfigHub spaces (12 total)
+# Order: workers -> units -> spaces (with retries)
 # ─────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Step 4: Clean up ConfigHub${NC}"
+echo -e "${YELLOW}Step 4: Clean up ConfigHub (${#CONFIGHUB_SPACES[@]} spaces)${NC}"
 
 if command -v cub &>/dev/null; then
-    for SPACE in $CONFIGHUB_SPACES; do
-        if cub space list 2>/dev/null | grep -q "^$SPACE "; then
+    EXISTING_SPACES=$(cub space list 2>/dev/null || true)
+
+    for SPACE in "${CONFIGHUB_SPACES[@]}"; do
+        if echo "$EXISTING_SPACES" | grep -q "^$SPACE "; then
+            echo ""
             echo "Cleaning up ConfigHub space: $SPACE"
 
             # Delete workers
             WORKERS=$(cub worker list --space "$SPACE" 2>/dev/null | tail -n +2 | awk '{print $1}' || true)
-            for WORKER in $WORKERS; do
-                echo "  Deleting worker: $WORKER"
-                cub worker delete "$WORKER" --space "$SPACE" 2>/dev/null || true
-            done
+            if [[ -n "$WORKERS" ]]; then
+                for WORKER in $WORKERS; do
+                    echo "  Deleting worker: $WORKER"
+                    cub worker delete "$WORKER" --space "$SPACE" 2>/dev/null || true
+                done
+            fi
 
             # Delete units
             UNITS=$(cub unit list --space "$SPACE" 2>/dev/null | tail -n +2 | awk '{print $1}' || true)
-            for UNIT in $UNITS; do
-                echo "  Deleting unit: $UNIT"
-                cub unit delete "$UNIT" --space "$SPACE" 2>/dev/null || true
+            if [[ -n "$UNITS" ]]; then
+                for UNIT in $UNITS; do
+                    echo "  Deleting unit: $UNIT"
+                    cub unit delete "$UNIT" --space "$SPACE" 2>/dev/null || true
+                done
+                # Wait for unit deletions to propagate
+                sleep 2
+            fi
+
+            # Delete space with retry
+            echo "  Deleting space: $SPACE"
+            DELETED=false
+            for ATTEMPT in 1 2 3; do
+                ERROR=$(cub space delete "$SPACE" 2>&1)
+                if [[ $? -eq 0 ]]; then
+                    DELETED=true
+                    break
+                fi
+                # Check if space is actually gone despite error
+                if ! cub space list 2>/dev/null | grep -q "^$SPACE "; then
+                    DELETED=true
+                    break
+                fi
+                if [[ $ATTEMPT -lt 3 ]]; then
+                    echo "    Retry $ATTEMPT/3 (waiting for resources to clear)..."
+                    sleep 3
+                fi
             done
 
-            # Delete space
-            echo "  Deleting space: $SPACE"
-            if cub space delete "$SPACE" 2>/dev/null; then
+            if [[ "$DELETED" == "true" ]]; then
                 echo -e "  ${GREEN}Space $SPACE deleted${NC}"
             else
                 echo -e "  ${RED}Failed to delete space $SPACE${NC}"
+                echo -e "  ${CYAN}Error: $ERROR${NC}"
+                echo -e "  ${CYAN}Try: cub space delete $SPACE${NC}"
             fi
         else
             echo "Space $SPACE not found, skipping"
         fi
     done
+
+    # Final verification
+    echo ""
+    REMAINING=$(cub space list 2>/dev/null | grep -E 'messagewall|order-' || true)
+    if [[ -n "$REMAINING" ]]; then
+        echo -e "${YELLOW}Remaining spaces (manual cleanup needed):${NC}"
+        echo "$REMAINING"
+    else
+        echo -e "${GREEN}All ConfigHub spaces cleaned up${NC}"
+    fi
 else
     echo "cub CLI not found, skipping ConfigHub cleanup"
-    echo "Manual cleanup: cub space delete <space-name>"
+    echo "Manual cleanup required for these spaces:"
+    printf '  %s\n' "${CONFIGHUB_SPACES[@]}"
 fi
 
 # ─────────────────────────────────────────────────────────────
@@ -215,8 +284,30 @@ echo "════════════════════════�
 echo -e "${GREEN}TEARDOWN COMPLETE${NC}"
 echo "═══════════════════════════════════════════════════════"
 echo ""
-echo "To start fresh:"
-echo "  ./scripts/bootstrap-kind.sh"
-echo "  ./scripts/bootstrap-crossplane.sh"
-echo "  ./scripts/bootstrap-aws-providers.sh"
+echo "To start fresh (see beads/current-focus.md for full guide):"
+echo ""
+echo "  # 1. Create clusters"
+echo "  scripts/bootstrap-kind.sh"
+echo "  scripts/bootstrap-workload-cluster.sh"
+echo ""
+echo "  # 2. Build and load microservice image"
+echo "  cd app/microservices && ./build.sh"
+echo "  kind load docker-image messagewall-microservice:latest --name workload"
+echo ""
+echo "  # 3. Install Crossplane and Kyverno on actuator"
+echo "  scripts/bootstrap-crossplane.sh"
+echo "  scripts/bootstrap-aws-providers.sh"
+echo "  scripts/bootstrap-kyverno.sh"
+echo ""
+echo "  # 4. Install ArgoCD on both clusters"
+echo "  scripts/bootstrap-argocd.sh"
+echo "  scripts/bootstrap-workload-argocd.sh"
+echo ""
+echo "  # 5. Configure ConfigHub credentials"
+echo "  scripts/setup-argocd-confighub-auth.sh"
+echo "  scripts/setup-workload-confighub-auth.sh"
+echo ""
+echo "  # 6. Create ConfigHub spaces and publish"
+echo "  scripts/setup-order-platform-spaces.sh"
+echo "  scripts/publish-order-platform.sh --apply"
 echo ""
