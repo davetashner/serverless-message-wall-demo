@@ -11,9 +11,8 @@
 ```bash
 cd ~/Development/serverless-message-wall-demo
 
-# 1. Verify both clusters exist
-kind get clusters
-# Expected: actuator, workload
+# 1. Run automated pre-flight checks
+./scripts/demo-preflight.sh
 
 # 2. Restart Crossplane providers (prevents stale reconciliation)
 kubectl rollout restart deployment -n crossplane-system --selector=pkg.crossplane.io/provider --context kind-actuator
@@ -22,9 +21,8 @@ kubectl rollout restart deployment -n crossplane-system --selector=pkg.crossplan
 kubectl get managed --context kind-actuator
 # All should show SYNCED=True, READY=True
 
-# 4. Verify microservices are running
-kubectl get pods -n microservices --context kind-workload
-# All 10 should be Running
+# 4. Verify Order Platform pods are running (20 pods across 5 teams)
+kubectl get pods --all-namespaces --context kind-workload | grep -E '^(platform-ops|data|customer|integrations|compliance)'
 
 # 5. Verify AWS access
 aws sts get-caller-identity
@@ -38,10 +36,14 @@ aws lambda list-functions --query 'Functions[?starts_with(FunctionName, `message
 ./scripts/bootstrap-kind.sh              # actuator
 ./scripts/bootstrap-workload-cluster.sh  # workload
 
-# Microservices not running? Redeploy:
+# Order Platform not running? Redeploy:
 cd app/microservices && ./build.sh
 kind load docker-image messagewall-microservice:latest --name workload
-kubectl apply -f infra/workloads/ --context kind-workload
+./scripts/publish-order-platform.sh --apply
+kubectl rollout restart deployment argocd-repo-server -n argocd --context kind-workload
+
+# Messagewall infrastructure not deployed? Deploy it:
+./scripts/deploy-messagewall.sh
 
 # Crossplane unhealthy? Check providers:
 kubectl get pods -n crossplane-system --context kind-actuator
@@ -61,9 +63,9 @@ kubectl logs -n crossplane-system -l pkg.crossplane.io/provider=provider-aws-lam
 This opens iTerm2 with 5 panes:
 - **COMMAND** — You type here
 - **ACTUATOR** — `kubectl get managed -w`
-- **WORKLOAD** — `kubectl get pods -n microservices -w`
-- **HEARTBEAT** — Live logs from heartbeat service
-- **COUNTER** — Live logs from counter service
+- **WORKLOAD** — `kubectl get pods -w` (Order Platform namespaces)
+- **HEARTBEAT** — Live logs from heartbeat service (platform-ops-dev)
+- **COUNTER** — Live logs from counter service (data-dev)
 
 ---
 
@@ -77,7 +79,7 @@ This opens iTerm2 with 5 panes:
 kubectl config get-contexts
 ```
 
-> **SAY:** "Two clusters: actuator runs Crossplane for AWS infrastructure, workload runs our microservices."
+> **SAY:** "Two clusters: actuator runs Crossplane for AWS infrastructure, workload runs our Order Platform microservices."
 
 ### Point to ACTUATOR pane
 
@@ -85,7 +87,7 @@ kubectl config get-contexts
 
 ### Point to WORKLOAD pane
 
-> **SAY:** "And here are 10 microservices running in our workload cluster. Each has a distinct name and logging pattern."
+> **SAY:** "And here are 20 microservices across 5 teams, each in their own namespace. Platform-ops, Data, Customer, Integrations, and Compliance."
 
 ### Point to HEARTBEAT and COUNTER panes
 
@@ -118,11 +120,17 @@ aws lambda get-function --function-name messagewall-api-handler
 # Should show ResourceNotFoundException
 ```
 
+### Trigger Crossplane reconciliation (speeds up detection)
+
+```bash
+kubectl annotate function.lambda.aws.upbound.io -l function=api-handler --overwrite reconcile=now --context kind-actuator
+```
+
 ### Watch the ACTUATOR pane
 
-> **SAY:** "Watch the ACTUATOR pane. Crossplane runs a reconciliation loop every 60 seconds. When it detects the drift..."
+> **SAY:** "Watch the ACTUATOR pane. Crossplane detects the drift and recreates the Lambda."
 
-*(Wait up to 60 seconds — the managed resource will briefly show SYNCED=False then return to SYNCED=True)*
+*(Wait ~30 seconds — the managed resource will briefly show SYNCED=False then return to SYNCED=True)*
 
 ### Verify it's back
 
@@ -134,62 +142,62 @@ aws lambda get-function --function-name messagewall-api-handler --query 'Configu
 
 ---
 
-## Part 3: Bulk Change — Update Lambda Timeout (3 min)
+## Part 3: Multi-Tenant Order Platform (2 min)
 
-> **SAY:** "Now let's see how ConfigHub enables bulk changes across all our infrastructure."
+> **SAY:** "Now let's look at how ConfigHub manages multiple teams."
 
-### Show current timeout
-
-```bash
-aws lambda get-function-configuration --function-name messagewall-api-handler --query '{Name:FunctionName,Timeout:Timeout}'
-aws lambda get-function-configuration --function-name messagewall-snapshot-writer --query '{Name:FunctionName,Timeout:Timeout}'
-```
-
-> **SAY:** "Both Lambdas have a 10 second timeout. Let's change them both to 30 seconds through ConfigHub."
-
-### Show the change in ConfigHub (or local manifests)
+### Show ConfigHub spaces
 
 ```bash
-# If using local manifests:
-grep -r "timeout:" infra/dev/
+cub space list | grep -E '(messagewall|order-)'
 ```
 
-> **SAY:** "In ConfigHub, I update the timeout value. One change, applied everywhere."
+> **SAY:** "Each team has their own ConfigHub space. 5 teams times 2 environments equals 10 spaces for Order Platform, plus messagewall for infrastructure."
 
-### Watch ACTUATOR pane as Crossplane applies
-
-> **SAY:** "Watch the ACTUATOR pane — Crossplane picks up the change and updates AWS."
-
-### Verify in AWS
+### Show team namespaces
 
 ```bash
-aws lambda get-function-configuration --function-name messagewall-api-handler --query '{Name:FunctionName,Timeout:Timeout}'
-aws lambda get-function-configuration --function-name messagewall-snapshot-writer --query '{Name:FunctionName,Timeout:Timeout}'
+kubectl get namespaces --context kind-workload | grep -E '(platform-ops|data|customer|integrations|compliance)'
 ```
 
-> **SAY:** "Both updated. One source of truth, consistent enforcement."
+### Show pods per team
+
+```bash
+kubectl get pods -n platform-ops-dev --context kind-workload
+kubectl get pods -n data-dev --context kind-workload
+```
+
+> **SAY:** "Each team owns their namespace. Platform-ops runs heartbeat and sentinel. Data runs counter and reporter. Complete isolation."
 
 ---
 
-## Part 4: Microservices Are Observable (1 min)
+## Part 4: Bulk Change via ConfigHub (3 min)
 
-### Point to the log panes
+> **SAY:** "Now let's see how ConfigHub enables bulk changes across all environments."
 
-> **SAY:** "Our microservices generate sparse, readable logs. In a real system, these could be services across multiple teams."
-
-### Show all pods
+### Show current state
 
 ```bash
-kubectl get pods -n microservices --context kind-workload
+# Show all dev namespaces at once
+kubectl get pods -n platform-ops-dev -n data-dev -n customer-dev --context kind-workload
 ```
 
-> **SAY:** "10 services, each with distinct names. Easy to see what's running, easy to debug."
+### Explain the bulk change
 
-### Optionally show another service's logs
+> **SAY:** "If I need to update all dev environments, I can do it in one operation through ConfigHub."
 
 ```bash
-kubectl logs deployment/quoter -n microservices --context kind-workload --tail=5
+# Example: Publish changes to all dev environments
+./scripts/publish-order-platform.sh --env dev --apply
 ```
+
+### Watch ArgoCD sync
+
+```bash
+kubectl get applications -n argocd --context kind-workload
+```
+
+> **SAY:** "ArgoCD picks up the changes from ConfigHub and syncs all 5 dev environments simultaneously."
 
 ---
 
@@ -199,8 +207,9 @@ kubectl logs deployment/quoter -n microservices --context kind-workload --tail=5
 
 1. **One ConfigHub** — single source of truth for all configuration
 2. **Multiple actuators** — Crossplane for AWS, ArgoCD for Kubernetes workloads
-3. **Continuous enforcement** — drift is detected and corrected automatically
-4. **Bulk changes** — update once, apply everywhere
+3. **Team isolation** — each team owns their own space and namespace
+4. **Continuous enforcement** — drift is detected and corrected automatically
+5. **Bulk changes** — update once, apply everywhere
 
 > **SAY:** "This is how you manage infrastructure at scale with confidence."
 
@@ -215,10 +224,13 @@ If something breaks during the demo:
 kubectl rollout restart deployment -n crossplane-system -l pkg.crossplane.io/provider=provider-aws-lambda --context kind-actuator
 
 # Microservice pod crashed? It'll auto-restart, or:
-kubectl rollout restart deployment/heartbeat -n microservices --context kind-workload
+kubectl rollout restart deployment/heartbeat -n platform-ops-dev --context kind-workload
 
-# Need to reset everything?
-kubectl apply -f infra/workloads/ --context kind-workload
+# ArgoCD not syncing? Restart repo-server:
+kubectl rollout restart deployment argocd-repo-server -n argocd --context kind-workload
+
+# Need to redeploy messagewall infrastructure?
+./scripts/deploy-messagewall.sh
 ```
 
 ---
@@ -228,7 +240,15 @@ kubectl apply -f infra/workloads/ --context kind-workload
 | Cluster | Context | What's Running |
 |---------|---------|----------------|
 | actuator | `kind-actuator` | Crossplane, manages AWS |
-| workload | `kind-workload` | 10 microservices |
+| workload | `kind-workload` | 20 microservices across 5 teams |
+
+| Team | Namespace (dev) | Services |
+|------|-----------------|----------|
+| platform-ops | platform-ops-dev | heartbeat, sentinel |
+| data | data-dev | counter, reporter |
+| customer | customer-dev | greeter, weather |
+| integrations | integrations-dev | pinger, ticker |
+| compliance | compliance-dev | auditor, quoter |
 
 | Service | Log Interval | Sample Output |
 |---------|--------------|---------------|

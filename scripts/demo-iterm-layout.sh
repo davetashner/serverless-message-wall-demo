@@ -1,6 +1,18 @@
 #!/bin/bash
 # Opens iTerm2 with a multi-pane demo layout
 # Requires iTerm2 to be installed
+#
+# Layout:
+#   ┌─────────────────┬─────────────────┐
+#   │ COMMAND         │ ACTUATOR        │
+#   │ (run demo here) │ managed -w      │
+#   ├─────────────────┼─────────────────┤
+#   │ HEARTBEAT       │ WORKLOAD        │
+#   │ logs -f         │ pods -w         │
+#   ├─────────────────┼─────────────────┤
+#   │ COUNTER         │                 │
+#   │ logs -f         │                 │
+#   └─────────────────┴─────────────────┘
 
 osascript <<'APPLESCRIPT'
 tell application "iTerm2"
@@ -16,6 +28,11 @@ tell application "iTerm2"
         write text "echo ''"
         write text "echo '=== DEMO READY ==='"
         write text "echo 'Panes: COMMAND (here), ACTUATOR, WORKLOAD, HEARTBEAT, COUNTER'"
+        write text "echo ''"
+        write text "echo 'Quick commands:'"
+        write text "echo '  ./scripts/demo-preflight.sh      # Check readiness'"
+        write text "echo '  ./scripts/demo-multi-cluster.sh  # Run multi-cluster demo'"
+        write text "echo '  ./scripts/demo-reconciliation.sh # Run self-healing demo'"
         write text "echo ''"
     end tell
 
@@ -38,8 +55,8 @@ tell application "iTerm2"
         tell workload_session
             set name to "WORKLOAD"
             write text "kubectl config use-context kind-workload"
-            write text "echo '=== WORKLOAD: Microservice Pods ==='"
-            write text "kubectl get pods -n microservices -w"
+            write text "echo '=== WORKLOAD: Order Platform Pods ==='"
+            write text "kubectl get pods --all-namespaces -l app.kubernetes.io/managed-by=argocd -w"
         end tell
 
         -- Split COMMAND down: HEARTBEAT logs
@@ -49,8 +66,8 @@ tell application "iTerm2"
         tell heartbeat_session
             set name to "HEARTBEAT"
             write text "kubectl config use-context kind-workload"
-            write text "echo '=== HEARTBEAT Logs ==='"
-            write text "sleep 2 && kubectl logs -f deployment/heartbeat -n microservices"
+            write text "echo '=== HEARTBEAT Logs (platform-ops-dev) ==='"
+            write text "sleep 2 && kubectl logs -f deployment/heartbeat -n platform-ops-dev"
         end tell
 
         -- Split HEARTBEAT right: COUNTER logs
@@ -60,8 +77,8 @@ tell application "iTerm2"
         tell counter_session
             set name to "COUNTER"
             write text "kubectl config use-context kind-workload"
-            write text "echo '=== COUNTER Logs ==='"
-            write text "sleep 2 && kubectl logs -f deployment/counter -n microservices"
+            write text "echo '=== COUNTER Logs (data-dev) ==='"
+            write text "sleep 2 && kubectl logs -f deployment/counter -n data-dev"
         end tell
 
     end tell
@@ -81,3 +98,10 @@ echo "├─────────────────┼─────�
 echo "│ COUNTER         │                 │"
 echo "│ logs -f         │                 │"
 echo "└─────────────────┴─────────────────┘"
+echo ""
+echo "Namespaces used:"
+echo "  • platform-ops-dev (heartbeat, sentinel)"
+echo "  • data-dev (counter, reporter)"
+echo "  • customer-dev (greeter, weather)"
+echo "  • integrations-dev (pinger, ticker)"
+echo "  • compliance-dev (auditor, quoter)"
