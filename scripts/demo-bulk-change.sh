@@ -186,7 +186,7 @@ fetch_current_config() {
     CURRENT_FILE="${TEMP_DIR}/current.yaml"
     MODIFIED_FILE="${TEMP_DIR}/modified.yaml"
 
-    if ! cub unit get --space "$SPACE" "$UNIT" --output yaml > "$CURRENT_FILE" 2>&1; then
+    if ! cub unit get --space "$SPACE" "$UNIT" --data-only > "$CURRENT_FILE" 2>&1; then
         error "Failed to fetch unit '$UNIT' from space '$SPACE'"
     fi
 

@@ -39,6 +39,7 @@ spec:
                     value: true
 
     # Block IAM Policies with wildcard resources (too broad)
+    # Exception: Some AWS APIs require Resource: "*" (e.g., events:PutEvents, sts:GetCallerIdentity)
     - name: block-wildcard-resources-in-role-policy
       match:
         any:
@@ -50,18 +51,20 @@ spec:
           IAM RolePolicy contains wildcard Resource ("*").
           Scope resources to specific ARNs or ARN patterns.
           Example: "arn:aws:s3:::my-bucket/*" instead of "*".
+          Exception: AWS APIs that require wildcards (events:PutEvents, sts:GetCallerIdentity) are allowed.
         foreach:
           - list: "request.object.spec.forProvider.policy"
             deny:
               conditions:
-                any:
-                  # Block standalone "*" but allow ARN patterns like "arn:*"
-                  - key: "{{ contains(element, '\"Resource\":\"*\"') || contains(element, '\"Resource\": \"*\"') }}"
+                all:
+                  # Must have wildcard resource
+                  - key: "{{ contains(element, '\"Resource\":\"*\"') || contains(element, '\"Resource\": \"*\"') || contains(element, '\"Resource\":[\"*\"]') || contains(element, '\"Resource\": [\"*\"]') }}"
                     operator: Equals
                     value: true
-                  - key: "{{ contains(element, '\"Resource\":[\"*\"]') || contains(element, '\"Resource\": [\"*\"]') }}"
+                  # AND must NOT be an allowed exception (AWS APIs that require wildcards)
+                  - key: "{{ contains(element, 'events:PutEvents') || contains(element, 'sts:GetCallerIdentity') || contains(element, 'sts:GetSessionToken') }}"
                     operator: Equals
-                    value: true
+                    value: false
 
 ---
 # Informational policy for detecting broad service wildcards (audit mode)
