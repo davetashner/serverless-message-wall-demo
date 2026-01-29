@@ -50,9 +50,8 @@ repoServer:
         # Set HOME to writable directory for cub CLI config
         - name: HOME
           value: /tmp
-        # Default space for workloads
-        - name: CONFIGHUB_SPACE
-          value: messagewall-workloads
+        # CONFIGHUB_SPACE is provided per-Application via source.plugin.env
+        # ArgoCD passes it as ARGOCD_ENV_CONFIGHUB_SPACE
         - name: CONFIGHUB_WORKER_ID
           valueFrom:
             secretKeyRef:
@@ -97,9 +96,10 @@ redis:
 dex:
   enabled: false
 
-# Application Set controller - disabled for demo simplicity
+# Application Set controller - needed for Order Platform multi-tenancy
 applicationSet:
-  enabled: false
+  enabled: true
+  replicas: 1
 
 # Notifications controller - disabled for demo
 notifications:

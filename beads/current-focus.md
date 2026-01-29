@@ -1,62 +1,37 @@
 # Current Focus
 
-Last updated: 2026-01-28
+Last updated: 2026-01-29
 
-## Weekend Goal: E2E Demo Ready by Next Week
+## Demo Goal: E2E with Multi-Tenancy
 
-Target: Complete EPIC-36 to have a compelling multi-cluster demo showing:
-1. **ConfigHub as central authority** - managing both infrastructure and workloads
-2. **Observable microservices** - 10 pods with distinct names, sparse logs visible in kubectl
-3. **Crossplane reconciliation** - delete a Lambda, watch it heal back
+Target: Two compelling demos showing ConfigHub as authority for both infrastructure AND workloads:
+
+1. **Messagewall Infrastructure** - AWS resources via Crossplane (no K8s workloads)
+2. **Order Platform Workloads** - Multi-tenant K8s deployments (5 teams × 2 envs)
 
 ---
 
-## EPIC-36 Implementation Status
+## ConfigHub Space Structure (ADR-013)
 
-| Issue | Title | Status |
-|-------|-------|--------|
-| ISSUE-36.1 | Create workload cluster bootstrap script | **DONE** |
-| ISSUE-36.2 | Install ArgoCD on workload cluster | **DONE** |
-| ISSUE-36.3 | Design 10 microservices | **DONE** |
-| ISSUE-36.4 | Create container image | **DONE** |
-| ISSUE-36.5 | Create K8s manifests | **DONE** |
-| ISSUE-36.6 | Publish to ConfigHub | **DONE** (script ready) |
-| ISSUE-36.7 | Multi-cluster demo script | **DONE** |
-| ISSUE-36.8 | Reconciliation demo script | **DONE** |
+```
+ConfigHub Spaces (12 total):
 
-### Files Created
+# Infrastructure - Messagewall team
+messagewall-dev          [Application=messagewall, Environment=dev]
+messagewall-prod         [Application=messagewall, Environment=prod]
 
-**Bootstrap scripts:**
-- `scripts/bootstrap-workload-cluster.sh` - Create kind cluster "workload"
-- `scripts/bootstrap-workload-argocd.sh` - Install ArgoCD on workload cluster
-- `scripts/setup-workload-confighub-auth.sh` - Configure ConfigHub credentials
-- `scripts/publish-workloads-to-confighub.sh` - Publish manifests to ConfigHub
-
-**Container image:**
-- `app/microservices/Dockerfile` - Minimal Alpine image
-- `app/microservices/entrypoint.sh` - Service-specific logging
-- `app/microservices/build.sh` - Build script
-
-**Kubernetes manifests:**
-- `infra/workloads/namespace.yaml`
-- `infra/workloads/heartbeat.yaml`
-- `infra/workloads/ticker.yaml`
-- `infra/workloads/greeter.yaml`
-- `infra/workloads/counter.yaml`
-- `infra/workloads/weather.yaml`
-- `infra/workloads/quoter.yaml`
-- `infra/workloads/pinger.yaml`
-- `infra/workloads/auditor.yaml`
-- `infra/workloads/reporter.yaml`
-- `infra/workloads/sentinel.yaml`
-
-**ArgoCD config:**
-- `platform/argocd/values-workload.yaml` - Helm values for workload cluster
-- `platform/argocd/application-workloads.yaml` - ArgoCD Application
-
-**Demo scripts:**
-- `scripts/demo-multi-cluster.sh` - Multi-cluster narrative demo
-- `scripts/demo-reconciliation.sh` - Crossplane self-healing demo
+# Order Platform - 5 teams × 2 envs = 10 spaces
+order-platform-ops-dev   [Application=order-platform, Team=platform-ops, Environment=dev]
+order-platform-ops-prod  [Application=order-platform, Team=platform-ops, Environment=prod]
+order-data-dev           [Application=order-platform, Team=data, Environment=dev]
+order-data-prod          [Application=order-platform, Team=data, Environment=prod]
+order-customer-dev       [Application=order-platform, Team=customer, Environment=dev]
+order-customer-prod      [Application=order-platform, Team=customer, Environment=prod]
+order-integrations-dev   [Application=order-platform, Team=integrations, Environment=dev]
+order-integrations-prod  [Application=order-platform, Team=integrations, Environment=prod]
+order-compliance-dev     [Application=order-platform, Team=compliance, Environment=dev]
+order-compliance-prod    [Application=order-platform, Team=compliance, Environment=prod]
+```
 
 ---
 
@@ -71,68 +46,122 @@ scripts/bootstrap-workload-cluster.sh  # workload cluster
 cd app/microservices && ./build.sh
 kind load docker-image messagewall-microservice:latest --name workload
 
-# 3. Install ArgoCD on both clusters
-scripts/bootstrap-argocd.sh           # actuator
-scripts/bootstrap-workload-argocd.sh  # workload
+# 3. Install Crossplane and Kyverno on actuator
+scripts/bootstrap-crossplane.sh
+scripts/bootstrap-aws-providers.sh
+scripts/bootstrap-kyverno.sh
 
-# 4. Configure ConfigHub credentials
+# 4. Install ArgoCD on both clusters
+scripts/bootstrap-argocd.sh              # actuator
+scripts/bootstrap-workload-argocd.sh     # workload
+
+# 5. Configure ConfigHub credentials
 scripts/setup-argocd-confighub-auth.sh        # actuator
 scripts/setup-workload-confighub-auth.sh      # workload
 
-# 5. Publish microservices to ConfigHub
-scripts/publish-workloads-to-confighub.sh --apply
+# 6. Create ConfigHub spaces for Order Platform
+scripts/setup-order-platform-spaces.sh
 
-# 6. Apply ArgoCD Applications
+# 7. Publish Order Platform manifests to ConfigHub
+scripts/publish-order-platform.sh --apply
+
+# 8. Apply ArgoCD configurations
 kubectl apply -f platform/argocd/application-dev.yaml --context kind-actuator
-kubectl apply -f platform/argocd/application-workloads.yaml --context kind-workload
+kubectl apply -f platform/argocd/applicationset-order-platform.yaml --context kind-workload
 
-# 7. Run demos
+# 9. Run demos
 scripts/demo-multi-cluster.sh
 scripts/demo-reconciliation.sh
 ```
 
 ---
 
-## Microservices Reference
+## Team-to-Microservice Mapping
 
-| Name | Interval | Log Example |
-|------|----------|-------------|
-| heartbeat | 30s | `[heartbeat] pulse #127 - all systems nominal` |
-| ticker | 45s | `[ticker] 2026-01-28T14:32:00Z - tick` |
-| greeter | 40s | `[greeter] Hello from pod greeter-7f8b9!` |
-| counter | 20s | `[counter] count=4582` |
-| weather | 60s | `[weather] Current: sunny, 72F` |
-| quoter | 55s | `[quoter] "The best way to predict..."` |
-| pinger | 25s | `[pinger] upstream check: 23ms, status=ok` |
-| auditor | 35s | `[auditor] event=config_read user=system` |
-| reporter | 50s | `[reporter] summary: 10 pods, 0 alerts` |
-| sentinel | 45s | `[sentinel] watchdog healthy` |
+| Team | Namespace | Microservices | Business Context |
+|------|-----------|---------------|------------------|
+| platform-ops | platform-ops-{env} | heartbeat, sentinel | Observability, health |
+| data | data-{env} | counter, reporter | Data aggregation |
+| customer | customer-{env} | greeter, weather | Customer features |
+| integrations | integrations-{env} | pinger, ticker | External integrations |
+| compliance | compliance-{env} | auditor, quoter | Audit, policy |
 
 ---
 
 ## Demo Narrative
 
-**Opening:** "ConfigHub is the single authority for all configuration."
+**Opening:** "ConfigHub is the single authority for ALL configuration - infrastructure AND workloads."
 
 1. Show both clusters: `kubectl config get-contexts`
-2. Show Crossplane pods in actuator cluster
-3. Show microservice pods in workload cluster (10 distinct names)
-4. Tail logs to show activity
-5. Show ConfigHub spaces (messagewall-dev, messagewall-workloads)
-6. Show ArgoCD sync status on both clusters
-7. **Reconciliation demo:** Delete Lambda in AWS, watch Crossplane recreate it
-8. **Closing:** "One authority, multiple actuators, continuous enforcement"
+2. Show Crossplane pods in actuator cluster (infrastructure actuator)
+3. Show microservice pods in workload cluster (10 services across 5 teams)
+4. Show ConfigHub spaces: `cub space list`
+5. **Bulk operation demo:** Update all dev environments at once
+   ```bash
+   scripts/publish-order-platform.sh --env dev --apply
+   ```
+6. **Team isolation:** Show that team A's space doesn't affect team B
+7. **Crossplane reconciliation:** Delete Lambda, watch it heal
+8. **Closing:** "One authority, multiple actuators, team isolation, continuous enforcement"
+
+---
+
+## Key Files Changed (EPIC-19 Implementation)
+
+**New structure:**
+- `infra/order-platform/{team}/{env}/` - Manifests per team/env
+- `scripts/setup-order-platform-spaces.sh` - Create ConfigHub spaces
+- `scripts/publish-order-platform.sh` - Publish to ConfigHub
+- `platform/argocd/applicationset-order-platform.yaml` - ArgoCD ApplicationSet
+- `docs/decisions/013-confighub-multi-tenancy-model.md` - Design rationale
+
+**Deprecated:**
+- `infra/workloads/` - Removed (replaced by order-platform)
+- `scripts/publish-workloads-to-confighub.sh.deprecated`
+- `platform/argocd/application-workloads.yaml.deprecated`
+
+---
+
+## Known Issues & Fixes (Session 2026-01-29)
+
+### ArgoCD CMP Environment Variables
+**Problem:** ArgoCD prefixes Application env vars with `ARGOCD_ENV_` prefix when passing to CMP sidecar.
+**Fix:** In CMP generate script, use `${ARGOCD_ENV_CONFIGHUB_SPACE:-$CONFIGHUB_SPACE}` to handle both cases.
+
+### ConfigHub Worker Permissions
+**Problem:** Workers with `--org-role viewer` or `user` cannot list units in spaces.
+**Fix:** Worker needs `--org-role admin` to have read access across all spaces.
+```bash
+cub worker update argocd-reader --space order-platform-ops-dev --org-role admin
+```
+
+### ConfigHub Worker Authentication
+**Problem:** Worker credentials in ArgoCD secret named `confighub-actuator-credentials` (not `argocd-confighub-worker`).
+**Setup:** Secret must contain `CONFIGHUB_WORKER_ID` and `CONFIGHUB_WORKER_SECRET` keys.
+
+### HeadRevisionNum vs LiveRevisionNum
+**Problem:** `cub unit apply` requires a Target; LiveRevisionNum=0 until target is set.
+**Fix:** For pull-based ArgoCD sync, use HeadRevisionNum (latest pushed) instead of LiveRevisionNum.
+
+### ArgoCD Deployment Env Var Conflict
+**Problem:** Container-level CONFIGHUB_SPACE env var overrides Application env var.
+**Fix:** Remove hardcoded CONFIGHUB_SPACE from deployment spec:
+```bash
+kubectl patch deployment argocd-repo-server -n argocd --type json \
+  -p '[{"op": "remove", "path": "/spec/template/spec/containers/1/env/1"}]'
+```
 
 ---
 
 ## Previous Work
 
+### EPIC-36 Status (Partially Complete)
+
+Issues 36.1-36.8 done. Remaining:
+- ISSUE-36.9: Bulk timeout demo script
+- ISSUE-36.10: Bulk tags demo script
+- ISSUE-36.11: iTerm layout script
+
 ### EPIC-17 Status (Paused)
 
-| Issue | Status |
-|-------|--------|
-| ISSUE-17.1 | Done |
-| ISSUE-17.2 | Done |
-| ISSUE-17.3 | Pending |
-| ISSUE-17.4 | Pending |
-| ISSUE-17.5 | Pending |
+Production protection gates - paused pending demo completion.

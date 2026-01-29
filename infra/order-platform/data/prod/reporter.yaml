@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reporter
+  namespace: data-prod
+  labels:
+    app: reporter
+    app.kubernetes.io/part-of: order-platform
+    team: data
+    environment: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reporter
+  template:
+    metadata:
+      labels:
+        app: reporter
+        app.kubernetes.io/part-of: order-platform
+        team: data
+        environment: prod
+    spec:
+      containers:
+        - name: reporter
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: reporter
+            - name: LOG_INTERVAL
+              value: "50"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

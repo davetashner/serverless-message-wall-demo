@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: counter
+  namespace: data-dev
+  labels:
+    app: counter
+    app.kubernetes.io/part-of: order-platform
+    team: data
+    environment: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: counter
+  template:
+    metadata:
+      labels:
+        app: counter
+        app.kubernetes.io/part-of: order-platform
+        team: data
+        environment: dev
+    spec:
+      containers:
+        - name: counter
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: counter
+            - name: LOG_INTERVAL
+              value: "20"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

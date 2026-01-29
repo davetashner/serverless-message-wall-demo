@@ -1,31 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: reporter
-  namespace: microservices
+  name: auditor
+  namespace: compliance-prod
   labels:
-    app: reporter
-    tier: microservices
+    app: auditor
+    app.kubernetes.io/part-of: order-platform
+    team: compliance
+    environment: prod
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: reporter
+      app: auditor
   template:
     metadata:
       labels:
-        app: reporter
-        tier: microservices
+        app: auditor
+        app.kubernetes.io/part-of: order-platform
+        team: compliance
+        environment: prod
     spec:
       containers:
-        - name: reporter
+        - name: auditor
           image: messagewall-microservice:latest
           imagePullPolicy: Never
           env:
             - name: SERVICE_NAME
-              value: reporter
+              value: auditor
             - name: LOG_INTERVAL
-              value: "50"
+              value: "35"
           resources:
             requests:
               memory: "16Mi"

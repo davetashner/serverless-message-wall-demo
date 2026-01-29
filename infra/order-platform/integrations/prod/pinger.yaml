@@ -1,31 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: counter
-  namespace: microservices
+  name: pinger
+  namespace: integrations-prod
   labels:
-    app: counter
-    tier: microservices
+    app: pinger
+    app.kubernetes.io/part-of: order-platform
+    team: integrations
+    environment: prod
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: counter
+      app: pinger
   template:
     metadata:
       labels:
-        app: counter
-        tier: microservices
+        app: pinger
+        app.kubernetes.io/part-of: order-platform
+        team: integrations
+        environment: prod
     spec:
       containers:
-        - name: counter
+        - name: pinger
           image: messagewall-microservice:latest
           imagePullPolicy: Never
           env:
             - name: SERVICE_NAME
-              value: counter
+              value: pinger
             - name: LOG_INTERVAL
-              value: "20"
+              value: "25"
           resources:
             requests:
               memory: "16Mi"

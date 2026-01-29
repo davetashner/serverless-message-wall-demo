@@ -37,16 +37,19 @@ data:
             fi
             cub auth login --as-worker
 
-      # Generate: fetch all units from ConfigHub space at their LiveRevisionNum
-      # This ensures ArgoCD only syncs configuration that has been explicitly
-      # promoted via 'cub unit apply', not just any revision pushed to ConfigHub.
-      # See ISSUE-8.6 for the controlled rollout design.
+      # Generate: fetch all units from ConfigHub space at their HeadRevisionNum
+      # For pull-based sync with ArgoCD, we fetch the latest pushed revision.
+      # This is appropriate when ConfigHub is used as a config store without
+      # a separate promotion workflow (LiveRevisionNum requires targets).
       generate:
         command: ["/bin/sh", "-c"]
         args:
           - |
-            if [ -z "$CONFIGHUB_SPACE" ]; then
-              echo "Error: CONFIGHUB_SPACE not set" >&2
+            # ArgoCD passes Application env vars with ARGOCD_ENV_ prefix
+            SPACE="${ARGOCD_ENV_CONFIGHUB_SPACE:-$CONFIGHUB_SPACE}"
+
+            if [ -z "$SPACE" ]; then
+              echo "Error: CONFIGHUB_SPACE not set (check Application spec source.plugin.env)" >&2
               exit 1
             fi
 
@@ -56,13 +59,15 @@ data:
               exit 0
             fi
 
-            # Fetch each unit's content at its LiveRevisionNum (not HeadRevisionNum)
-            # This ensures only promoted revisions are synced to Kubernetes.
-            # Units with LiveRevisionNum=0 have never been applied and are skipped.
-            cub unit list --space "$CONFIGHUB_SPACE" --no-header \
-              --columns Unit.Slug,Unit.LiveRevisionNum 2>/dev/null | while read -r unit live_rev; do
-              if [ -n "$unit" ] && [ -n "$live_rev" ] && [ "$live_rev" != "0" ]; then
-                cub revision get --space "$CONFIGHUB_SPACE" --data-only "$unit" "$live_rev" 2>/dev/null
+            # Authenticate before fetching (auth token may have expired)
+            cub auth login --as-worker >/dev/null 2>&1
+
+            # Fetch each unit's content at its HeadRevisionNum (latest pushed revision)
+            # For pull-based ArgoCD sync, we use Head since Live requires targets.
+            cub unit list --space "$SPACE" --no-header \
+              --columns Unit.Slug,Unit.HeadRevisionNum 2>/dev/null | while read -r unit head_rev; do
+              if [ -n "$unit" ] && [ -n "$head_rev" ] && [ "$head_rev" != "0" ]; then
+                cub revision get --space "$SPACE" --data-only "$unit" "$head_rev" 2>/dev/null
                 echo "---"
               fi
             done

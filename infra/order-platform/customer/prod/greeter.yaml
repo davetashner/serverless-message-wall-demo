@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: greeter
+  namespace: customer-prod
+  labels:
+    app: greeter
+    app.kubernetes.io/part-of: order-platform
+    team: customer
+    environment: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: greeter
+  template:
+    metadata:
+      labels:
+        app: greeter
+        app.kubernetes.io/part-of: order-platform
+        team: customer
+        environment: prod
+    spec:
+      containers:
+        - name: greeter
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: greeter
+            - name: LOG_INTERVAL
+              value: "40"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

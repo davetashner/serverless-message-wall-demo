@@ -1,31 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: greeter
-  namespace: microservices
+  name: pinger
+  namespace: integrations-dev
   labels:
-    app: greeter
-    tier: microservices
+    app: pinger
+    app.kubernetes.io/part-of: order-platform
+    team: integrations
+    environment: dev
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: greeter
+      app: pinger
   template:
     metadata:
       labels:
-        app: greeter
-        tier: microservices
+        app: pinger
+        app.kubernetes.io/part-of: order-platform
+        team: integrations
+        environment: dev
     spec:
       containers:
-        - name: greeter
+        - name: pinger
           image: messagewall-microservice:latest
           imagePullPolicy: Never
           env:
             - name: SERVICE_NAME
-              value: greeter
+              value: pinger
             - name: LOG_INTERVAL
-              value: "40"
+              value: "25"
           resources:
             requests:
               memory: "16Mi"

@@ -1,31 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pinger
-  namespace: microservices
+  name: weather
+  namespace: customer-dev
   labels:
-    app: pinger
-    tier: microservices
+    app: weather
+    app.kubernetes.io/part-of: order-platform
+    team: customer
+    environment: dev
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: pinger
+      app: weather
   template:
     metadata:
       labels:
-        app: pinger
-        tier: microservices
+        app: weather
+        app.kubernetes.io/part-of: order-platform
+        team: customer
+        environment: dev
     spec:
       containers:
-        - name: pinger
+        - name: weather
           image: messagewall-microservice:latest
           imagePullPolicy: Never
           env:
             - name: SERVICE_NAME
-              value: pinger
+              value: weather
             - name: LOG_INTERVAL
-              value: "25"
+              value: "60"
           resources:
             requests:
               memory: "16Mi"

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: customer-prod
+  labels:
+    app.kubernetes.io/part-of: order-platform
+    team: customer
+    environment: prod
+    managed-by: confighub

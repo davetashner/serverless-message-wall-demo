@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auditor
+  namespace: compliance-dev
+  labels:
+    app: auditor
+    app.kubernetes.io/part-of: order-platform
+    team: compliance
+    environment: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auditor
+  template:
+    metadata:
+      labels:
+        app: auditor
+        app.kubernetes.io/part-of: order-platform
+        team: compliance
+        environment: dev
+    spec:
+      containers:
+        - name: auditor
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: auditor
+            - name: LOG_INTERVAL
+              value: "35"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

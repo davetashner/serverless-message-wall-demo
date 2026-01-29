@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticker
+  namespace: integrations-prod
+  labels:
+    app: ticker
+    app.kubernetes.io/part-of: order-platform
+    team: integrations
+    environment: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ticker
+  template:
+    metadata:
+      labels:
+        app: ticker
+        app.kubernetes.io/part-of: order-platform
+        team: integrations
+        environment: prod
+    spec:
+      containers:
+        - name: ticker
+          image: messagewall-microservice:latest
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: ticker
+            - name: LOG_INTERVAL
+              value: "45"
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "10m"

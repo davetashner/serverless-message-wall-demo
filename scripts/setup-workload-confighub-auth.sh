@@ -4,7 +4,8 @@ set -euo pipefail
 CLUSTER_CONTEXT="kind-workload"
 NAMESPACE="argocd"
 SECRET_NAME="confighub-actuator-credentials"
-SPACE="messagewall-workloads"
+# Any space works for worker home - we use org-role admin for cross-space access
+SPACE="order-platform-ops-dev"
 
 usage() {
     cat <<EOF
@@ -12,12 +13,13 @@ Usage: $(basename "$0") [OPTIONS]
 
 Configure ConfigHub credentials for ArgoCD on the workload cluster.
 
-This script creates a ConfigHub worker and stores its credentials as a
-Kubernetes Secret that the ArgoCD CMP plugin uses to authenticate.
+This script creates a ConfigHub worker with org-admin access (required for
+reading from multiple spaces) and stores its credentials as a Kubernetes
+Secret that the ArgoCD CMP plugin uses to authenticate.
 
 OPTIONS:
-    --space NAME        ConfigHub space name (default: ${SPACE})
-    --worker-id ID      Use existing worker ID (skip creation)
+    --space NAME        Space to create worker in (default: ${SPACE})
+    --worker-id ID      Use existing worker UUID (skip creation)
     --worker-secret SEC Use existing worker secret
     --dry-run           Print what would be done without executing
     -h, --help          Show this help message
@@ -26,13 +28,14 @@ PREREQUISITES:
     - cub CLI installed and authenticated (cub auth login)
     - kubectl configured with access to the workload cluster
     - ArgoCD installed (run bootstrap-workload-argocd.sh first)
+    - ConfigHub spaces created (run setup-order-platform-spaces.sh first)
 
 EXAMPLES:
     # Create new worker and configure
     $(basename "$0")
 
     # Use existing worker credentials
-    $(basename "$0") --worker-id wkr_xxx --worker-secret sec_xxx
+    $(basename "$0") --worker-id <UUID> --worker-secret <SECRET>
 
 EOF
     exit 0
@@ -100,44 +103,59 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
         exit 1
     fi
 
-    # Check if authenticated
-    if ! cub auth status &> /dev/null; then
-        echo "Error: Not authenticated to ConfigHub. Run: cub auth login"
-        exit 1
-    fi
-
-    WORKER_NAME="workload-sync-$(date +%Y%m%d)"
+    WORKER_NAME="argocd-reader"
 
     if [[ "${DRY_RUN}" == "true" ]]; then
         echo "[DRY RUN] Would create worker: ${WORKER_NAME} in space: ${SPACE}"
+        echo "[DRY RUN] With --org-role admin for cross-space read access"
     else
-        echo "Creating worker '${WORKER_NAME}' in space '${SPACE}'..."
+        echo "Creating worker '${WORKER_NAME}' in space '${SPACE}' with org-admin access..."
+        echo "(org-admin is required to read units from all 10 Order Platform spaces)"
 
-        # Create worker (may already exist, that's ok with --allow-exists)
-        if ! cub worker create --space "${SPACE}" "${WORKER_NAME}" --allow-exists 2>&1; then
+        # Create worker with org-admin role for cross-space access
+        # The worker is homed in one space but can access all spaces via org role
+        WORKER_OUTPUT=$(cub worker create --space "${SPACE}" "${WORKER_NAME}" --org-role admin --allow-exists 2>&1) || {
+            echo "Error creating worker:"
+            echo "${WORKER_OUTPUT}"
             echo ""
             echo "If the space doesn't exist, create it first:"
-            echo "  cub space create ${SPACE}"
+            echo "  scripts/setup-order-platform-spaces.sh"
             exit 1
+        }
+
+        # Extract UUID from output: "Successfully created bridgeworker argocd-reader (UUID)"
+        WORKER_ID=$(echo "${WORKER_OUTPUT}" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' || echo "")
+
+        if [[ -z "${WORKER_ID}" ]]; then
+            # Worker may already exist, get its ID
+            echo "Fetching existing worker ID..."
+            WORKER_INFO=$(cub worker get --space "${SPACE}" "${WORKER_NAME}" 2>&1) || {
+                echo "Error getting worker info"
+                exit 1
+            }
+            WORKER_ID=$(echo "${WORKER_INFO}" | grep -E '^ID' | awk '{print $2}')
+
+            # Ensure it has admin role
+            echo "Updating worker to have org-admin role..."
+            cub worker update --space "${SPACE}" "${WORKER_NAME}" --org-role admin 2>/dev/null || true
         fi
 
-        echo "Fetching worker credentials..."
-
-        # Get worker ID (the slug is the ID for worker operations)
-        WORKER_ID="${WORKER_NAME}"
+        echo "Worker UUID: ${WORKER_ID}"
+        echo ""
+        echo "Fetching worker secret..."
 
         # Get worker secret
         WORKER_SECRET=$(cub worker get-secret --space "${SPACE}" "${WORKER_NAME}" 2>&1) || {
             echo "Error getting worker secret"
             echo "You may need to provide credentials manually:"
-            echo "  $(basename "$0") --worker-id <ID> --worker-secret <SECRET>"
+            echo "  $(basename "$0") --worker-id <UUID> --worker-secret <SECRET>"
             exit 1
         }
 
         if [[ -z "${WORKER_SECRET}" ]]; then
             echo "Error: Failed to get worker secret"
             echo "You may need to provide credentials manually:"
-            echo "  $(basename "$0") --worker-id <ID> --worker-secret <SECRET>"
+            echo "  $(basename "$0") --worker-id <UUID> --worker-secret <SECRET>"
             exit 1
         fi
 
@@ -147,19 +165,14 @@ fi
 
 echo ""
 echo "Credentials:"
-echo "  Worker ID:     ${WORKER_ID:0:20}..."
-echo "  Worker Secret: ${WORKER_SECRET:0:10}..."
+echo "  Worker ID:     ${WORKER_ID}"
+echo "  Worker Secret: ${WORKER_SECRET:0:20}..."
 
 # Check if secret already exists
 if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" --context "${CLUSTER_CONTEXT}" &> /dev/null; then
     echo ""
     echo "Secret '${SECRET_NAME}' already exists in namespace '${NAMESPACE}'"
-    read -p "Overwrite? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        exit 0
-    fi
+    echo "Replacing existing secret..."
 
     if [[ "${DRY_RUN}" == "true" ]]; then
         echo "[DRY RUN] Would delete existing secret"
@@ -192,8 +205,8 @@ echo "Next steps:"
 echo "  1. Restart the ArgoCD repo-server to pick up the new credentials:"
 echo "     kubectl rollout restart deployment argocd-repo-server -n argocd --context ${CLUSTER_CONTEXT}"
 echo ""
-echo "  2. Apply the ArgoCD Application to start syncing:"
-echo "     kubectl apply -f platform/argocd/application-workloads.yaml --context ${CLUSTER_CONTEXT}"
+echo "  2. Apply the ArgoCD ApplicationSet to create Order Platform apps:"
+echo "     kubectl apply -f platform/argocd/applicationset-order-platform.yaml --context ${CLUSTER_CONTEXT}"
 echo ""
 echo "  3. Check sync status:"
-echo "     kubectl get application messagewall-workloads -n argocd --context ${CLUSTER_CONTEXT}"
+echo "     kubectl get applications -n argocd --context ${CLUSTER_CONTEXT}"

@@ -1,31 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ticker
-  namespace: microservices
+  name: heartbeat
+  namespace: platform-ops-dev
   labels:
-    app: ticker
-    tier: microservices
+    app: heartbeat
+    app.kubernetes.io/part-of: order-platform
+    team: platform-ops
+    environment: dev
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ticker
+      app: heartbeat
   template:
     metadata:
       labels:
-        app: ticker
-        tier: microservices
+        app: heartbeat
+        app.kubernetes.io/part-of: order-platform
+        team: platform-ops
+        environment: dev
     spec:
       containers:
-        - name: ticker
+        - name: heartbeat
           image: messagewall-microservice:latest
           imagePullPolicy: Never
           env:
             - name: SERVICE_NAME
-              value: ticker
+              value: heartbeat
             - name: LOG_INTERVAL
-              value: "45"
+              value: "30"
           resources:
             requests:
               memory: "16Mi"

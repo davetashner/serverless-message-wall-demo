@@ -1,31 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: weather
-  namespace: microservices
+  name: heartbeat
+  namespace: platform-ops-prod
   labels:
-    app: weather
-    tier: microservices
+    app: heartbeat
+    app.kubernetes.io/part-of: order-platform
+    team: platform-ops
+    environment: prod
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: weather
+      app: heartbeat
   template:
     metadata:
       labels:
-        app: weather
-        tier: microservices
+        app: heartbeat
+        app.kubernetes.io/part-of: order-platform
+        team: platform-ops
+        environment: prod
     spec:
       containers:
-        - name: weather
+        - name: heartbeat
           image: messagewall-microservice:latest
           imagePullPolicy: Never
           env:
             - name: SERVICE_NAME
-              value: weather
+              value: heartbeat
             - name: LOG_INTERVAL
-              value: "60"
+              value: "30"
           resources:
             requests:
               memory: "16Mi"

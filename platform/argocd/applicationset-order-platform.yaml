@@ -1,0 +1,69 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: order-platform
+  namespace: argocd
+spec:
+  generators:
+    # Generate applications for each team × environment combination
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - team: platform-ops
+                - team: data
+                - team: customer
+                - team: integrations
+                - team: compliance
+          - list:
+              elements:
+                - env: dev
+                - env: prod
+
+  template:
+    metadata:
+      name: 'order-{{team}}-{{env}}'
+      namespace: argocd
+      labels:
+        app.kubernetes.io/part-of: order-platform
+        team: '{{team}}'
+        environment: '{{env}}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+
+      # Source: ConfigHub space via CMP plugin
+      source:
+        # RepoURL required by ArgoCD even for CMP plugins
+        repoURL: https://github.com/davetashner/serverless-message-wall-demo.git
+        path: platform
+        plugin:
+          name: confighub
+          env:
+            - name: CONFIGHUB_SPACE
+              value: 'order-{{team}}-{{env}}'
+
+      # Destination: team-env namespace in the local workload cluster
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{team}}-{{env}}'
+
+      # Sync policy
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+          - ApplyOutOfSyncOnly=true
+
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
