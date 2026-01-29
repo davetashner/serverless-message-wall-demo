@@ -155,30 +155,58 @@ done
 echo ""
 echo -e "${YELLOW}Step 3: Wait for Crossplane AWS cleanup${NC}"
 
+# Helper function to empty stuck S3 buckets
+empty_stuck_s3_buckets() {
+    local stuck_buckets
+    # Find S3 bucket resources that are stuck (SYNCED=False, READY=False)
+    stuck_buckets=$(kubectl get managed --context kind-actuator 2>/dev/null | grep 'bucket.s3' | grep -E 'False.*False' | awk '{print $3}' || true)
+    if [[ -n "$stuck_buckets" ]]; then
+        for bucket in $stuck_buckets; do
+            if [[ -n "$bucket" && "$bucket" != "EXTERNAL-NAME" ]]; then
+                echo -e "  ${CYAN}Emptying stuck S3 bucket: $bucket${NC}"
+                aws s3 rm "s3://$bucket" --recursive 2>/dev/null || true
+            fi
+        done
+    fi
+}
+
 if kubectl get managed --context kind-actuator &>/dev/null; then
-    echo "Waiting for AWS resources to be deleted (up to 5 minutes)..."
-    for i in {1..60}; do
+    echo "Waiting for AWS resources to be deleted (up to 2 minutes)..."
+    SHOWN_STUCK_DIAGNOSTIC=false
+    EMPTIED_BUCKETS=false
+
+    for i in {1..24}; do
         REMAINING=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/null | wc -l | tr -d ' ')
         if [[ "$REMAINING" -eq 0 ]]; then
-            echo -e "${GREEN}All Crossplane managed resources deleted${NC}"
+            echo -e "\n${GREEN}All Crossplane managed resources deleted${NC}"
             break
         fi
 
         # Check for stuck resources
         STUCK=$(kubectl get managed --context kind-actuator 2>/dev/null | grep -E 'False.*False' || true)
         if [[ -n "$STUCK" ]]; then
-            echo -e "${CYAN}Some resources are stuck. Checking issues...${NC}"
-            kubectl get managed --context kind-actuator 2>/dev/null | grep -E 'False.*False' | head -5
-            echo ""
-            echo -e "${CYAN}Common fixes:${NC}"
-            echo "  • S3 buckets not empty: aws s3 rm s3://BUCKET --recursive"
-            echo "  • IAM permission missing: check iam:ListInstanceProfilesForRole"
-            echo ""
+            # Show diagnostic only once
+            if [[ "$SHOWN_STUCK_DIAGNOSTIC" == "false" ]]; then
+                echo ""
+                echo -e "${CYAN}Some resources are stuck:${NC}"
+                kubectl get managed --context kind-actuator 2>/dev/null | grep -E 'False.*False' | head -5
+                echo ""
+                SHOWN_STUCK_DIAGNOSTIC=true
+            fi
+
+            # Proactively empty S3 buckets (only try once)
+            if [[ "$EMPTIED_BUCKETS" == "false" ]]; then
+                empty_stuck_s3_buckets
+                EMPTIED_BUCKETS=true
+            fi
         fi
 
-        echo "  $REMAINING resources remaining..."
+        # Simple progress indicator
+        ELAPSED=$((i * 5))
+        printf "\r  %d resources remaining... (%ds)" "$REMAINING" "$ELAPSED"
         sleep 5
     done
+    echo ""  # Clear the progress line
 
     # Final check
     REMAINING=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/null | wc -l | tr -d ' ')
