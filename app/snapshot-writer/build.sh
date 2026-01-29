@@ -18,8 +18,8 @@ mkdir -p "${BUILD_DIR}"
 cp "${SCRIPT_DIR}/handler.py" "${BUILD_DIR}/"
 
 # Create zip (boto3 is included in Lambda runtime)
-cd "${BUILD_DIR}"
-zip -r "${ZIP_FILE}" .
+# Use subshell to avoid changing caller's working directory
+(cd "${BUILD_DIR}" && zip -r "${ZIP_FILE}" .)
 
 # Cleanup
 rm -rf "${BUILD_DIR}"

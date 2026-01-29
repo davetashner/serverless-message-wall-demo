@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 CLUSTER_CONTEXT="kind-actuator"
 NAMESPACE="argocd"
 SECRET_NAME="confighub-actuator-credentials"
@@ -101,8 +104,8 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
     fi
 
     # Check if authenticated by trying to list spaces
-    AUTH_CHECK=$(cub space list 2>&1 || true)
-    if echo "$AUTH_CHECK" | grep -qE "(not authenticated|worker associated|401|403|expired)"; then
+    SPACE_LIST=$(cub space list 2>&1 || true)
+    if echo "$SPACE_LIST" | grep -qE "(not authenticated|worker associated|401|403|expired)"; then
         echo "Error: ConfigHub credentials expired or invalid."
         echo "Run: cub auth login"
         exit 1
@@ -110,8 +113,9 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
 
     WORKER_NAME="actuator-sync-$(date +%Y%m%d)"
 
-    # Check if space exists
-    if ! cub space list 2>/dev/null | grep -q "^${SPACE} "; then
+    # Check if space exists (reuse SPACE_LIST to avoid calling cub twice)
+    # Use word boundary match to handle column-aligned output
+    if ! echo "$SPACE_LIST" | grep -qE "^${SPACE}[[:space:]]"; then
         echo "Error: ConfigHub space '${SPACE}' does not exist."
         echo "Create it first with:"
         echo "  cub space create ${SPACE} --label Environment=dev --label Application=messagewall"

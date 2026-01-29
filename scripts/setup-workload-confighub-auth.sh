@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 CLUSTER_CONTEXT="kind-workload"
 NAMESPACE="argocd"
 SECRET_NAME="confighub-actuator-credentials"
@@ -111,8 +114,8 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
         exit 1
     fi
 
-    # Check if space exists
-    if ! echo "$AUTH_CHECK" | grep -q "^${SPACE} "; then
+    # Check if space exists (use word boundary for column-aligned output)
+    if ! echo "$AUTH_CHECK" | grep -qE "^${SPACE}[[:space:]]"; then
         echo "Error: ConfigHub space '${SPACE}' does not exist."
         echo "Create Order Platform spaces first with:"
         echo "  scripts/setup-order-platform-spaces.sh"

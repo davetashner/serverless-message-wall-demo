@@ -35,7 +35,22 @@ data:
               echo "Run scripts/setup-argocd-confighub-auth.sh to configure"
               exit 0
             fi
-            cub auth login --as-worker
+
+            # Retry auth with exponential backoff (handles transient config/network issues)
+            MAX_RETRIES=3
+            RETRY_DELAY=1
+            for i in $(seq 1 $MAX_RETRIES); do
+              if cub auth login --as-worker 2>&1; then
+                exit 0
+              fi
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo "Auth attempt $i failed, retrying in ${RETRY_DELAY}s..."
+                sleep $RETRY_DELAY
+                RETRY_DELAY=$((RETRY_DELAY * 2))
+              fi
+            done
+            echo "Error: Failed to authenticate after $MAX_RETRIES attempts"
+            exit 1
 
       # Generate: fetch all units from ConfigHub space at their HeadRevisionNum
       # For pull-based sync with ArgoCD, we fetch the latest pushed revision.
@@ -60,7 +75,11 @@ data:
             fi
 
             # Authenticate before fetching (auth token may have expired)
-            cub auth login --as-worker >/dev/null 2>&1
+            # Retry with brief delay if first attempt fails
+            cub auth login --as-worker >/dev/null 2>&1 || {
+              sleep 1
+              cub auth login --as-worker >/dev/null 2>&1
+            }
 
             # Fetch each unit's content at its HeadRevisionNum (latest pushed revision)
             # For pull-based ArgoCD sync, we use Head since Live requires targets.
