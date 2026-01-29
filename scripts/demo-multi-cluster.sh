@@ -64,12 +64,12 @@ print_narrator "Crossplane controllers manage AWS resources declaratively"
 
 pause
 
-print_header "STEP 3: Workload Cluster - Observable Microservices"
+print_header "STEP 3: Workload Cluster - Order Platform Microservices"
 
-print_step "kubectl get pods -n microservices --context kind-workload"
-kubectl get pods -n microservices --context kind-workload 2>/dev/null || echo "(Microservices not deployed - publish to ConfigHub first)"
+print_step "kubectl get pods --all-namespaces --context kind-workload | grep -E '^(platform|data|customer|integrations|compliance)'"
+kubectl get pods --all-namespaces --context kind-workload 2>/dev/null | grep -E '^(platform|data|customer|integrations|compliance)' || echo "(Microservices not deployed - publish to ConfigHub first)"
 
-print_narrator "10 distinct microservices, each with unique logging behavior"
+print_narrator "20 microservices across 5 teams × 2 environments (dev/prod)"
 
 pause
 
@@ -80,16 +80,16 @@ print_narrator "Watch logs from multiple services (Ctrl+C to stop):"
 
 echo ""
 echo "Examples:"
-echo "  kubectl logs -f deployment/heartbeat -n microservices --context kind-workload"
-echo "  kubectl logs -f deployment/counter -n microservices --context kind-workload"
-echo "  kubectl logs -f deployment/quoter -n microservices --context kind-workload"
+echo "  kubectl logs -f deployment/heartbeat -n platform-ops-dev --context kind-workload"
+echo "  kubectl logs -f deployment/counter -n data-dev --context kind-workload"
+echo "  kubectl logs -f deployment/quoter -n compliance-dev --context kind-workload"
 echo ""
 
 read -p "Watch heartbeat logs? (y/N) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    print_step "kubectl logs -f deployment/heartbeat -n microservices --context kind-workload"
-    timeout 30 kubectl logs -f deployment/heartbeat -n microservices --context kind-workload 2>/dev/null || true
+    print_step "kubectl logs -f deployment/heartbeat -n platform-ops-dev --context kind-workload"
+    timeout 30 kubectl logs -f deployment/heartbeat -n platform-ops-dev --context kind-workload 2>/dev/null || true
 fi
 
 pause
@@ -98,12 +98,20 @@ print_header "STEP 5: ConfigHub - The Single Authority"
 
 print_narrator "Both clusters sync from ConfigHub spaces:"
 echo ""
-echo "  messagewall-dev        → actuator cluster (Crossplane resources)"
-echo "  messagewall-workloads  → workload cluster (microservices)"
+echo "  Infrastructure (actuator cluster):"
+echo "    messagewall-dev          → Crossplane AWS resources"
+echo ""
+echo "  Order Platform (workload cluster) - 10 spaces:"
+echo "    order-platform-ops-dev   → platform-ops team dev namespace"
+echo "    order-data-dev           → data team dev namespace"
+echo "    order-customer-dev       → customer team dev namespace"
+echo "    order-integrations-dev   → integrations team dev namespace"
+echo "    order-compliance-dev     → compliance team dev namespace"
+echo "    (+ 5 prod spaces)"
 echo ""
 
-print_step "cub space list"
-cub space list 2>/dev/null || echo "(Run: cub auth login)"
+print_step "cub space list | grep -E '(messagewall|order-)'"
+cub space list 2>/dev/null | grep -E '(messagewall|order-)' || echo "(Run: cub auth login)"
 
 pause
 
@@ -125,17 +133,19 @@ print_header "STEP 7: Demonstrate Bulk Change via ConfigHub"
 
 print_narrator "A change in ConfigHub propagates to all affected clusters"
 echo ""
-echo "Example: Update LOG_INTERVAL for all microservices"
+echo "Example: Update LOG_INTERVAL for all dev environments"
 echo ""
-echo "  # Edit the manifest"
-echo "  vi infra/workloads/heartbeat.yaml"
+echo "  # Edit the manifests"
+echo "  vi infra/order-platform/platform-ops/dev/heartbeat.yaml"
 echo ""
-echo "  # Publish to ConfigHub"
-echo "  cub unit update --space messagewall-workloads heartbeat --file infra/workloads/heartbeat.yaml"
-echo "  cub unit apply --space messagewall-workloads heartbeat"
+echo "  # Publish changes to all dev spaces"
+echo "  ./scripts/publish-order-platform.sh --env dev --apply"
 echo ""
-echo "  # Watch ArgoCD sync"
-echo "  kubectl get application messagewall-workloads -n argocd --context kind-workload -w"
+echo "  # Watch ArgoCD sync all dev applications"
+echo "  kubectl get applications -n argocd --context kind-workload -w"
+echo ""
+echo "Or update ALL environments at once:"
+echo "  ./scripts/publish-order-platform.sh --apply"
 echo ""
 
 pause
@@ -149,19 +159,24 @@ Key Takeaways:
   1. ConfigHub is the SINGLE AUTHORITY for all configuration
      - Infrastructure (Crossplane) and workloads (pods) in one system
 
-  2. Multiple clusters sync from ConfigHub
+  2. Multi-tenant organization
+     - 5 teams × 2 environments = 10 ConfigHub spaces
+     - Each team owns their own space (isolation)
+     - Labels enable bulk operations across spaces
+
+  3. Multiple clusters sync from ConfigHub
      - Each cluster has ArgoCD + CMP plugin
      - Changes flow from ConfigHub to clusters automatically
 
-  3. Observable microservices make activity visible
-     - 10 distinct pods with unique logging
+  4. Observable microservices make activity visible
+     - 20 pods across 5 teams (dev + prod)
      - Easy to see in kubectl get pods / logs
 
-  4. Crossplane reconciles AWS resources
+  5. Crossplane reconciles AWS resources
      - See demo-reconciliation.sh for self-healing demo
 
 Next Steps:
   - Run scripts/demo-reconciliation.sh to see Crossplane self-healing
-  - Make a bulk change in ConfigHub and watch it propagate
+  - Make a bulk change with: ./scripts/publish-order-platform.sh --apply
 
 EOF

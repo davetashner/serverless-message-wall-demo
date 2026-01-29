@@ -46,7 +46,7 @@ MANAGED_COUNT=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/
 if [[ "$MANAGED_COUNT" -gt 0 ]]; then
     pass "$MANAGED_COUNT managed resources found"
 else
-    fail "No managed resources found"
+    warn "No managed resources (AWS infra not deployed - that's OK for workload demo)"
 fi
 
 SYNCED_FALSE=$(kubectl get managed --context kind-actuator 2>/dev/null | grep -c "False" || true)
@@ -57,14 +57,24 @@ else
 fi
 
 echo ""
-echo "Microservices (workload cluster):"
-PODS_RUNNING=$(kubectl get pods -n microservices --context kind-workload --no-headers 2>/dev/null | grep -c "Running" || true)
-if [[ "$PODS_RUNNING" -eq 10 ]]; then
-    pass "All 10 microservice pods running"
+echo "Order Platform (workload cluster):"
+# Count pods across all Order Platform namespaces (5 teams × 2 envs × 2 services = 20 pods expected)
+PODS_RUNNING=$(kubectl get pods --all-namespaces --context kind-workload --no-headers 2>/dev/null | grep -E '^(platform-ops|data|customer|integrations|compliance)' | grep -c "Running" || true)
+if [[ "$PODS_RUNNING" -ge 20 ]]; then
+    pass "All $PODS_RUNNING Order Platform pods running"
 elif [[ "$PODS_RUNNING" -gt 0 ]]; then
-    warn "$PODS_RUNNING/10 pods running"
+    warn "$PODS_RUNNING/20 pods running"
 else
-    fail "No microservice pods running"
+    fail "No Order Platform pods running"
+fi
+
+APPS_SYNCED=$(kubectl get applications -n argocd --context kind-workload --no-headers 2>/dev/null | grep -c "Synced" || true)
+if [[ "$APPS_SYNCED" -ge 10 ]]; then
+    pass "$APPS_SYNCED/10 ArgoCD applications synced"
+elif [[ "$APPS_SYNCED" -gt 0 ]]; then
+    warn "$APPS_SYNCED/10 applications synced"
+else
+    fail "No ArgoCD applications synced"
 fi
 
 echo ""
