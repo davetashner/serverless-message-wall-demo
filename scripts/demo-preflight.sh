@@ -1,5 +1,5 @@
 #!/bin/bash
-# demo-preflight.sh - Pre-flight checks before running the demo
+# demo-preflight.sh - Pre-flight checks before running the 9-part demo
 #
 # Run this before presenting to ensure everything is ready.
 # Exit code 0 = all checks passed, non-zero = something needs attention.
@@ -8,8 +8,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
-STATE_FILE="${PROJECT_ROOT}/.setup-state.json"
-CLUSTER_CONTEXT="kind-actuator"
 
 # Colors
 RED='\033[0;31m'
@@ -29,112 +27,123 @@ info() { echo -e "${BLUE}ℹ${NC} $1"; }
 
 echo ""
 echo "═══════════════════════════════════════════════════════"
-echo "  DEMO PRE-FLIGHT CHECKS"
+echo "  DEMO PRE-FLIGHT CHECKS (9-Part Demo)"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 
 #------------------------------------------------------------------------------
-# 1. Configuration
+# 1. Kind Clusters
 #------------------------------------------------------------------------------
-echo -e "${BOLD}Configuration:${NC}"
+echo -e "${BOLD}Kind Clusters:${NC}"
 
-if [[ -f "${STATE_FILE}" ]]; then
-    pass "Setup state file exists"
-    AWS_REGION=$(grep '"aws_region"' "${STATE_FILE}" | sed 's/.*: *"//' | sed 's/".*//')
-    BUCKET_NAME=$(grep '"bucket_name"' "${STATE_FILE}" | sed 's/.*: *"//' | sed 's/".*//')
-    RESOURCE_PREFIX=$(grep '"resource_prefix"' "${STATE_FILE}" | sed 's/.*: *"//' | sed 's/".*//')
-    info "Region: ${AWS_REGION}, Bucket: ${BUCKET_NAME}"
+# Check actuator-east cluster
+if kind get clusters 2>/dev/null | grep -q "^actuator-east$"; then
+    pass "actuator-east cluster exists"
 else
-    fail "Setup state file missing (run: ./scripts/setup.sh)"
-    AWS_REGION="us-east-1"
-    BUCKET_NAME="messagewall-dev"
-    RESOURCE_PREFIX="messagewall"
+    fail "actuator-east cluster missing (run: scripts/bootstrap-kind.sh --name actuator-east --region us-east-1)"
 fi
 
-echo ""
-
-#------------------------------------------------------------------------------
-# 2. Clusters
-#------------------------------------------------------------------------------
-echo -e "${BOLD}Clusters:${NC}"
-
-if kind get clusters 2>/dev/null | grep -q "^actuator$"; then
-    pass "actuator cluster exists"
+# Check actuator-west cluster
+if kind get clusters 2>/dev/null | grep -q "^actuator-west$"; then
+    pass "actuator-west cluster exists"
 else
-    fail "actuator cluster missing (run: ./scripts/bootstrap-kind.sh)"
+    fail "actuator-west cluster missing (run: scripts/bootstrap-kind.sh --name actuator-west --region us-west-2)"
 fi
 
-# Workload cluster is optional (for Order Platform demo)
+# Check workload cluster
 if kind get clusters 2>/dev/null | grep -q "^workload$"; then
-    pass "workload cluster exists (Order Platform demo ready)"
+    pass "workload cluster exists"
 else
-    info "workload cluster not found (optional - for Order Platform demo)"
+    fail "workload cluster missing (run: scripts/bootstrap-workload-cluster.sh)"
 fi
 
 echo ""
 
 #------------------------------------------------------------------------------
-# 3. Crossplane (actuator cluster)
+# 2. Crossplane Health (both actuator clusters)
 #------------------------------------------------------------------------------
-echo -e "${BOLD}Crossplane (actuator cluster):${NC}"
+echo -e "${BOLD}Crossplane (actuator clusters):${NC}"
 
-CROSSPLANE_RUNNING=$(kubectl get pods -n crossplane-system --context kind-actuator --no-headers 2>/dev/null | grep -c "Running" || true)
-if [[ "$CROSSPLANE_RUNNING" -gt 0 ]]; then
-    pass "$CROSSPLANE_RUNNING Crossplane pods running"
-else
-    fail "Crossplane not healthy (run: ./scripts/bootstrap-crossplane.sh)"
-fi
+for REGION in east west; do
+    CONTEXT="kind-actuator-${REGION}"
 
-# Check providers
-PROVIDER_OUTPUT=$(kubectl get providers.pkg.crossplane.io --context "${CLUSTER_CONTEXT}" 2>/dev/null || true)
-PROVIDER_COUNT=$(echo "$PROVIDER_OUTPUT" | grep -c "True.*True" || true)
-if [[ "$PROVIDER_COUNT" -gt 0 ]]; then
-    pass "$PROVIDER_COUNT AWS providers healthy"
-else
-    fail "Crossplane providers not healthy (run: ./scripts/bootstrap-aws-providers.sh)"
-fi
+    if ! kubectl cluster-info --context "${CONTEXT}" &>/dev/null; then
+        fail "Cannot connect to ${CONTEXT}"
+        continue
+    fi
 
-# Check managed resources
-MANAGED_COUNT=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/null | wc -l | tr -d ' ')
-if [[ "$MANAGED_COUNT" -gt 0 ]]; then
-    pass "$MANAGED_COUNT managed AWS resources"
-else
-    warn "No managed resources (run: ./scripts/deploy-dev.sh)"
-fi
+    CROSSPLANE_RUNNING=$(kubectl get pods -n crossplane-system --context "${CONTEXT}" --no-headers 2>/dev/null | grep -c "Running" || true)
+    if [[ "$CROSSPLANE_RUNNING" -gt 0 ]]; then
+        pass "${CONTEXT}: $CROSSPLANE_RUNNING Crossplane pods running"
+    else
+        fail "${CONTEXT}: Crossplane not healthy (run: scripts/bootstrap-crossplane.sh --context ${CONTEXT})"
+    fi
 
-SYNCED_FALSE=$(kubectl get managed --context kind-actuator 2>/dev/null | grep -c "False" || true)
-if [[ "$SYNCED_FALSE" -eq 0 ]]; then
-    pass "All resources SYNCED=True"
-else
-    warn "$SYNCED_FALSE resources not synced"
-fi
+    # Check providers
+    PROVIDER_OUTPUT=$(kubectl get providers.pkg.crossplane.io --context "${CONTEXT}" 2>/dev/null || true)
+    PROVIDER_COUNT=$(echo "$PROVIDER_OUTPUT" | grep -c "True.*True" || true)
+    if [[ "$PROVIDER_COUNT" -gt 0 ]]; then
+        pass "${CONTEXT}: $PROVIDER_COUNT AWS providers healthy"
+    else
+        fail "${CONTEXT}: Crossplane providers not healthy (run: scripts/bootstrap-aws-providers.sh --context ${CONTEXT})"
+    fi
+done
 
 echo ""
 
 #------------------------------------------------------------------------------
-# 4. Kyverno
+# 3. Kyverno Health (both actuator clusters)
 #------------------------------------------------------------------------------
-echo -e "${BOLD}Kyverno:${NC}"
+echo -e "${BOLD}Kyverno (actuator clusters):${NC}"
 
-KYVERNO_OUTPUT=$(kubectl get pods -n kyverno --context "${CLUSTER_CONTEXT}" --no-headers 2>/dev/null || true)
-KYVERNO_PODS=$(echo "$KYVERNO_OUTPUT" | grep -c "Running" || true)
-if [[ "$KYVERNO_PODS" -gt 0 ]]; then
-    pass "$KYVERNO_PODS Kyverno pods running"
-else
-    fail "Kyverno not running (run: ./scripts/bootstrap-kyverno.sh)"
-fi
+for REGION in east west; do
+    CONTEXT="kind-actuator-${REGION}"
 
-POLICY_COUNT=$(kubectl get clusterpolicy --context "${CLUSTER_CONTEXT}" 2>/dev/null | grep -c "True" || echo 0)
-if [[ ${POLICY_COUNT} -gt 0 ]]; then
-    pass "$POLICY_COUNT Kyverno policies loaded"
-else
-    warn "No Kyverno policies (run: kubectl apply -f platform/kyverno/policies/)"
-fi
+    if ! kubectl cluster-info --context "${CONTEXT}" &>/dev/null; then
+        continue
+    fi
+
+    KYVERNO_OUTPUT=$(kubectl get pods -n kyverno --context "${CONTEXT}" --no-headers 2>/dev/null || true)
+    KYVERNO_PODS=$(echo "$KYVERNO_OUTPUT" | grep -c "Running" || true)
+    if [[ "$KYVERNO_PODS" -gt 0 ]]; then
+        pass "${CONTEXT}: $KYVERNO_PODS Kyverno pods running"
+    else
+        fail "${CONTEXT}: Kyverno not running (run: scripts/bootstrap-kyverno.sh --context ${CONTEXT})"
+    fi
+
+    POLICY_COUNT=$(kubectl get clusterpolicy --context "${CONTEXT}" 2>/dev/null | grep -c "True" || echo 0)
+    if [[ ${POLICY_COUNT} -gt 0 ]]; then
+        pass "${CONTEXT}: $POLICY_COUNT Kyverno policies loaded"
+    else
+        warn "${CONTEXT}: No Kyverno policies (run: kubectl apply -f platform/kyverno/policies/ --context ${CONTEXT})"
+    fi
+done
 
 echo ""
 
 #------------------------------------------------------------------------------
-# 5. AWS Access & Resources
+# 4. ArgoCD Health (all three clusters)
+#------------------------------------------------------------------------------
+echo -e "${BOLD}ArgoCD:${NC}"
+
+for CONTEXT in kind-actuator-east kind-actuator-west kind-workload; do
+    if ! kubectl cluster-info --context "${CONTEXT}" &>/dev/null; then
+        continue
+    fi
+
+    ARGOCD_OUTPUT=$(kubectl get pods -n argocd --context "${CONTEXT}" --no-headers 2>/dev/null || true)
+    ARGOCD_PODS=$(echo "$ARGOCD_OUTPUT" | grep -c "Running" || true)
+    if [[ "$ARGOCD_PODS" -gt 0 ]]; then
+        pass "${CONTEXT}: $ARGOCD_PODS ArgoCD pods running"
+    else
+        warn "${CONTEXT}: ArgoCD not running"
+    fi
+done
+
+echo ""
+
+#------------------------------------------------------------------------------
+# 5. AWS Credentials
 #------------------------------------------------------------------------------
 echo -e "${BOLD}AWS Access:${NC}"
 
@@ -145,53 +154,12 @@ else
     fail "AWS credentials not configured"
 fi
 
-# Check S3 bucket
-if aws s3 ls "s3://${BUCKET_NAME}" &> /dev/null; then
-    pass "S3 bucket exists: ${BUCKET_NAME}"
-else
-    fail "S3 bucket not found: ${BUCKET_NAME}"
-fi
-
-# Check website accessibility
-WEBSITE_URL="http://${BUCKET_NAME}.s3-website-${AWS_REGION}.amazonaws.com/"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WEBSITE_URL}" 2>/dev/null || echo "000")
-if [[ "${HTTP_CODE}" == "200" ]]; then
-    pass "Website accessible (HTTP 200)"
-else
-    warn "Website returned HTTP ${HTTP_CODE}"
-fi
-
-# Check Lambda functions
-LAMBDA_COUNT=$(aws lambda list-functions --query 'Functions[?starts_with(FunctionName, `messagewall`)].FunctionName' --output text 2>/dev/null | wc -w | tr -d ' ')
-if [[ "$LAMBDA_COUNT" -ge 2 ]]; then
-    pass "$LAMBDA_COUNT messagewall Lambda functions"
-else
-    warn "Only $LAMBDA_COUNT Lambda functions (expected 2)"
-fi
-
-# Check Function URL
-if kubectl get functionurl "${RESOURCE_PREFIX}-api-handler-url" --context "${CLUSTER_CONTEXT}" &> /dev/null; then
-    API_URL=$(kubectl get functionurl "${RESOURCE_PREFIX}-api-handler-url" \
-        -o jsonpath='{.status.atProvider.functionUrl}' \
-        --context "${CLUSTER_CONTEXT}" 2>/dev/null || true)
-    if [[ -n "${API_URL}" ]]; then
-        pass "Function URL ready"
-        info "API: ${API_URL}"
-    else
-        warn "Function URL exists but not ready"
-    fi
-else
-    fail "Function URL not found"
-fi
-
 echo ""
 
 #------------------------------------------------------------------------------
-# 6. ConfigHub
+# 6. ConfigHub CLI and Authentication
 #------------------------------------------------------------------------------
-echo -e "${BOLD}ConfigHub:${NC}"
-
-CONFIGHUB_SPACE="messagewall-dev"
+echo -e "${BOLD}ConfigHub CLI:${NC}"
 
 if ! command -v cub &> /dev/null; then
     fail "cub CLI not installed"
@@ -203,46 +171,130 @@ else
     else
         fail "Not authenticated (run: cub auth login)"
     fi
-
-    SPACE_OUTPUT=$(cub space list 2>/dev/null || true)
-    if echo "$SPACE_OUTPUT" | grep -q "${CONFIGHUB_SPACE}"; then
-        pass "Space '${CONFIGHUB_SPACE}' exists"
-    else
-        fail "Space '${CONFIGHUB_SPACE}' not found"
-    fi
-
-    UNIT_OUTPUT=$(cub unit list --space "${CONFIGHUB_SPACE}" 2>/dev/null || true)
-    if echo "$UNIT_OUTPUT" | grep -q "lambda"; then
-        pass "Lambda unit exists in ConfigHub"
-    else
-        fail "Lambda unit not found in ConfigHub"
-    fi
 fi
 
 echo ""
 
 #------------------------------------------------------------------------------
-# 7. Order Platform (optional)
+# 7. ConfigHub Spaces - Messagewall (4 spaces)
 #------------------------------------------------------------------------------
+echo -e "${BOLD}ConfigHub Spaces (Messagewall):${NC}"
+
+if command -v cub &> /dev/null && cub auth status &> /dev/null; then
+    SPACE_OUTPUT=$(cub space list 2>/dev/null || true)
+
+    MESSAGEWALL_SPACES=(
+        "messagewall-dev-east"
+        "messagewall-dev-west"
+        "messagewall-prod-east"
+        "messagewall-prod-west"
+    )
+
+    MESSAGEWALL_FOUND=0
+    for SPACE in "${MESSAGEWALL_SPACES[@]}"; do
+        if echo "$SPACE_OUTPUT" | grep -q "${SPACE}"; then
+            pass "Space '${SPACE}' exists"
+            MESSAGEWALL_FOUND=$((MESSAGEWALL_FOUND + 1))
+        else
+            fail "Space '${SPACE}' not found (run: scripts/setup-multiregion-spaces.sh)"
+        fi
+    done
+
+    if [[ $MESSAGEWALL_FOUND -eq 4 ]]; then
+        info "All 4 messagewall spaces found"
+    fi
+else
+    warn "Skipping ConfigHub space checks (not authenticated)"
+fi
+
+echo ""
+
+#------------------------------------------------------------------------------
+# 8. ConfigHub Spaces - Order Platform (10 spaces)
+#------------------------------------------------------------------------------
+echo -e "${BOLD}ConfigHub Spaces (Order Platform):${NC}"
+
+if command -v cub &> /dev/null && cub auth status &> /dev/null; then
+    SPACE_OUTPUT=$(cub space list 2>/dev/null || true)
+
+    ORDER_PLATFORM_SPACES=(
+        "order-platform-ops-dev"
+        "order-platform-ops-prod"
+        "order-data-dev"
+        "order-data-prod"
+        "order-customer-dev"
+        "order-customer-prod"
+        "order-integrations-dev"
+        "order-integrations-prod"
+        "order-compliance-dev"
+        "order-compliance-prod"
+    )
+
+    ORDER_FOUND=0
+    ORDER_MISSING=0
+    for SPACE in "${ORDER_PLATFORM_SPACES[@]}"; do
+        if echo "$SPACE_OUTPUT" | grep -q "${SPACE}"; then
+            ORDER_FOUND=$((ORDER_FOUND + 1))
+        else
+            ORDER_MISSING=$((ORDER_MISSING + 1))
+        fi
+    done
+
+    if [[ $ORDER_FOUND -eq 10 ]]; then
+        pass "All 10 order-platform spaces exist"
+    elif [[ $ORDER_FOUND -gt 0 ]]; then
+        warn "$ORDER_FOUND/10 order-platform spaces found (run: scripts/setup-order-platform-spaces.sh)"
+    else
+        fail "No order-platform spaces found (run: scripts/setup-order-platform-spaces.sh)"
+    fi
+else
+    warn "Skipping ConfigHub space checks (not authenticated)"
+fi
+
+echo ""
+
+#------------------------------------------------------------------------------
+# 9. Docker Images in Workload Cluster
+#------------------------------------------------------------------------------
+echo -e "${BOLD}Docker Images (workload cluster):${NC}"
+
 if kind get clusters 2>/dev/null | grep -q "^workload$"; then
+    # Check if messagewall-microservice image is loaded
+    # We check by looking at the node's images
+    IMAGE_CHECK=$(docker exec workload-control-plane crictl images 2>/dev/null | grep "messagewall-microservice" || true)
+    if [[ -n "$IMAGE_CHECK" ]]; then
+        pass "messagewall-microservice:latest loaded in workload cluster"
+    else
+        fail "messagewall-microservice:latest not loaded (run: cd app/microservices && ./build.sh && kind load docker-image messagewall-microservice:latest --name workload)"
+    fi
+else
+    warn "Skipping image check (workload cluster not running)"
+fi
+
+echo ""
+
+#------------------------------------------------------------------------------
+# 10. Order Platform Pods (optional - shows readiness)
+#------------------------------------------------------------------------------
+if kind get clusters 2>/dev/null | grep -q "^workload$" && kubectl cluster-info --context kind-workload &>/dev/null; then
     echo -e "${BOLD}Order Platform (workload cluster):${NC}"
 
     PODS_RUNNING=$(kubectl get pods --all-namespaces --context kind-workload --no-headers 2>/dev/null | grep -E '^(platform-ops|data|customer|integrations|compliance)' | grep -c "Running" || true)
     if [[ "$PODS_RUNNING" -ge 20 ]]; then
         pass "All $PODS_RUNNING Order Platform pods running"
     elif [[ "$PODS_RUNNING" -gt 0 ]]; then
-        warn "$PODS_RUNNING/20 pods running"
+        info "$PODS_RUNNING/20 Order Platform pods running"
     else
-        warn "No Order Platform pods running"
+        info "No Order Platform pods running yet (will deploy in Part 8)"
     fi
 
     APPS_SYNCED=$(kubectl get applications -n argocd --context kind-workload --no-headers 2>/dev/null | grep -c "Synced" || true)
     if [[ "$APPS_SYNCED" -ge 10 ]]; then
         pass "$APPS_SYNCED/10 ArgoCD applications synced"
     elif [[ "$APPS_SYNCED" -gt 0 ]]; then
-        warn "$APPS_SYNCED/10 applications synced"
+        info "$APPS_SYNCED/10 ArgoCD applications synced"
     else
-        warn "No ArgoCD applications synced"
+        info "No ArgoCD applications synced yet (will deploy in Part 8)"
     fi
 
     echo ""
@@ -254,25 +306,37 @@ fi
 echo "═══════════════════════════════════════════════════════"
 
 if [[ ${ERRORS} -eq 0 && ${WARNINGS} -eq 0 ]]; then
-    echo -e "${GREEN}PRE-FLIGHT PASSED${NC} — All systems ready!"
+    echo -e "${GREEN}PRE-FLIGHT PASSED${NC} - All systems ready!"
     echo ""
     echo "Next steps:"
-    echo "  1. Load environment: source ./scripts/demo-env.sh"
-    echo "  2. Open demo script:  cat docs/demo-script.md"
+    echo "  1. Open demo script: cat docs/demo-script.md"
+    echo "  2. Start with Part 1: The Claim"
     echo ""
     exit 0
 elif [[ ${ERRORS} -eq 0 ]]; then
-    echo -e "${YELLOW}PRE-FLIGHT PASSED WITH WARNINGS${NC} — Demo should work"
+    echo -e "${YELLOW}PRE-FLIGHT PASSED WITH WARNINGS${NC} - Demo should work"
     echo ""
     exit 0
 else
-    echo -e "${RED}PRE-FLIGHT FAILED${NC} — ${ERRORS} error(s), fix before demo"
+    echo -e "${RED}PRE-FLIGHT FAILED${NC} - ${ERRORS} error(s), ${WARNINGS} warning(s)"
     echo ""
     echo "Quick fixes:"
-    echo "  ./scripts/setup.sh              # Generate config"
-    echo "  ./scripts/bootstrap-kind.sh     # Create cluster"
-    echo "  ./scripts/deploy-dev.sh         # Deploy AWS resources"
-    echo "  cub auth login                  # Authenticate ConfigHub"
+    echo "  # Create clusters"
+    echo "  scripts/bootstrap-kind.sh --name actuator-east --region us-east-1"
+    echo "  scripts/bootstrap-kind.sh --name actuator-west --region us-west-2"
+    echo "  scripts/bootstrap-workload-cluster.sh"
+    echo ""
+    echo "  # Install Crossplane on actuator clusters"
+    echo "  scripts/bootstrap-crossplane.sh --context kind-actuator-east"
+    echo "  scripts/bootstrap-crossplane.sh --context kind-actuator-west"
+    echo ""
+    echo "  # Create ConfigHub spaces"
+    echo "  scripts/setup-multiregion-spaces.sh"
+    echo "  scripts/setup-order-platform-spaces.sh"
+    echo ""
+    echo "  # Load Docker images"
+    echo "  cd app/microservices && ./build.sh && cd ../.."
+    echo "  kind load docker-image messagewall-microservice:latest --name workload"
     echo ""
     exit 1
 fi

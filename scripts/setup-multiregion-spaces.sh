@@ -10,6 +10,9 @@ declare -A REGIONS=(
     ["west"]="us-west-2"
 )
 
+# Environments to create
+ENVIRONMENTS=("dev" "prod")
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
@@ -19,6 +22,8 @@ Create ConfigHub spaces for multi-region messagewall deployment.
 Creates:
   - messagewall-dev-east (Region=us-east-1)
   - messagewall-dev-west (Region=us-west-2)
+  - messagewall-prod-east (Region=us-east-1)
+  - messagewall-prod-west (Region=us-west-2)
 
 OPTIONS:
     --dry-run    Print what would be done without executing
@@ -73,38 +78,42 @@ fi
 echo "Creating multi-region ConfigHub spaces..."
 echo ""
 
-for suffix in "${!REGIONS[@]}"; do
-    region="${REGIONS[$suffix]}"
-    space_name="messagewall-dev-${suffix}"
+for env in "${ENVIRONMENTS[@]}"; do
+    for suffix in "${!REGIONS[@]}"; do
+        region="${REGIONS[$suffix]}"
+        space_name="messagewall-${env}-${suffix}"
 
-    echo "Creating space: ${space_name} (Region=${region})"
+        echo "Creating space: ${space_name} (Region=${region}, Environment=${env})"
 
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        echo "  [DRY RUN] Would create space '${space_name}' with labels:"
-        echo "    - Environment=dev"
-        echo "    - Application=messagewall"
-        echo "    - Region=${region}"
-    else
-        # Check if space already exists
-        if echo "$SPACE_LIST" | grep -qE "^${space_name}[[:space:]]"; then
-            echo "  Space '${space_name}' already exists, skipping"
+        if [[ "${DRY_RUN}" == "true" ]]; then
+            echo "  [DRY RUN] Would create space '${space_name}' with labels:"
+            echo "    - Environment=${env}"
+            echo "    - Application=messagewall"
+            echo "    - Region=${region}"
         else
-            cub space create "${space_name}" \
-                --label Environment=dev \
-                --label Application=messagewall \
-                --label Region="${region}"
-            echo "  Created successfully"
+            # Check if space already exists
+            if echo "$SPACE_LIST" | grep -qE "^${space_name}[[:space:]]"; then
+                echo "  Space '${space_name}' already exists, skipping"
+            else
+                cub space create "${space_name}" \
+                    --label Environment="${env}" \
+                    --label Application=messagewall \
+                    --label Region="${region}"
+                echo "  Created successfully"
+            fi
         fi
-    fi
-    echo ""
+        echo ""
+    done
 done
 
 echo "Multi-region ConfigHub spaces configured."
 echo ""
 echo "Spaces created:"
-for suffix in "${!REGIONS[@]}"; do
-    region="${REGIONS[$suffix]}"
-    echo "  - messagewall-dev-${suffix} (Region=${region})"
+for env in "${ENVIRONMENTS[@]}"; do
+    for suffix in "${!REGIONS[@]}"; do
+        region="${REGIONS[$suffix]}"
+        echo "  - messagewall-${env}-${suffix} (Environment=${env}, Region=${region})"
+    done
 done
 echo ""
 echo "Next steps:"

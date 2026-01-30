@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: ServerlessEventAppClaim
+      name: messagewall
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: messagewall-prod-west
+      - op: replace
+        path: /spec/environment
+        value: prod
+      - op: replace
+        path: /spec/region
+        value: us-west-2
+      - op: replace
+        path: /spec/resourcePrefix
+        value: messagewall-west
+      - op: replace
+        path: /spec/lambdaMemory
+        value: 256
+      - op: replace
+        path: /spec/lambdaTimeout
+        value: 30
+      - op: add
+        path: /metadata/annotations
+        value:
+          messagewall.demo/tier: production
+          messagewall.demo/oncall: platform-team
+
+labels:
+  - pairs:
+      environment: prod
+      region: us-west-2
+    includeSelectors: false

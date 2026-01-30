@@ -37,3 +37,6 @@ spec:
             limits:
               memory: "32Mi"
               cpu: "10m"
+          securityContext:
+            runAsNonRoot: false
+            allowPrivilegeEscalation: true

@@ -1,0 +1,21 @@
+# Base ServerlessEventAppClaim template
+# Overlays patch: name, environment, region, resourcePrefix
+# Prod overlays also patch: lambdaMemory, lambdaTimeout, annotations
+---
+apiVersion: messagewall.demo/v1alpha1
+kind: ServerlessEventAppClaim
+metadata:
+  name: messagewall  # Patched by overlay
+  namespace: default
+spec:
+  # Required fields - must be provided by overlay or deployment
+  environment: dev  # Patched by overlay: dev | staging | prod
+  awsAccountId: "REPLACE_ME"  # Must be set at deployment time
+
+  # Optional fields with defaults (shown for clarity)
+  resourcePrefix: messagewall  # Patched by overlay for multi-region
+  region: us-east-1  # Patched by overlay: us-east-1 | us-west-2 | eu-west-1
+  lambdaMemory: 128  # Patched by prod overlays
+  lambdaTimeout: 10  # Patched by prod overlays
+  eventSource: messagewall.api-handler
+  # artifactBucket: ""  # Uses app bucket by default
