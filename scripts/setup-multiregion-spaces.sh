@@ -4,11 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Regional configuration
-declare -A REGIONS=(
-    ["east"]="us-east-1"
-    ["west"]="us-west-2"
-)
+# Regional configuration (bash 3.2 compatible - parallel arrays)
+REGION_SUFFIXES=("east" "west")
+REGION_VALUES=("us-east-1" "us-west-2")
 
 # Environments to create
 ENVIRONMENTS=("dev" "prod")
@@ -79,8 +77,9 @@ echo "Creating multi-region ConfigHub spaces..."
 echo ""
 
 for env in "${ENVIRONMENTS[@]}"; do
-    for suffix in "${!REGIONS[@]}"; do
-        region="${REGIONS[$suffix]}"
+    for i in "${!REGION_SUFFIXES[@]}"; do
+        suffix="${REGION_SUFFIXES[$i]}"
+        region="${REGION_VALUES[$i]}"
         space_name="messagewall-${env}-${suffix}"
 
         echo "Creating space: ${space_name} (Region=${region}, Environment=${env})"
@@ -110,8 +109,9 @@ echo "Multi-region ConfigHub spaces configured."
 echo ""
 echo "Spaces created:"
 for env in "${ENVIRONMENTS[@]}"; do
-    for suffix in "${!REGIONS[@]}"; do
-        region="${REGIONS[$suffix]}"
+    for i in "${!REGION_SUFFIXES[@]}"; do
+        suffix="${REGION_SUFFIXES[$i]}"
+        region="${REGION_VALUES[$i]}"
         echo "  - messagewall-${env}-${suffix} (Environment=${env}, Region=${region})"
     done
 done

@@ -144,8 +144,12 @@ if [[ -z "${WORKER_ID}" ]] || [[ -z "${WORKER_SECRET}" ]]; then
 
         echo "Fetching worker credentials..."
 
-        # Get worker ID (the slug is the ID for worker operations)
-        WORKER_ID="${WORKER_NAME}"
+        # Get worker UUID (required for authentication)
+        WORKER_ID=$(cub worker get --space "${SPACE}" "${WORKER_NAME}" 2>&1 | grep "^ID" | awk '{print $2}')
+        if [[ -z "${WORKER_ID}" ]]; then
+            echo "Error: Failed to get worker UUID"
+            exit 1
+        fi
 
         # Get worker secret
         WORKER_SECRET=$(cub worker get-secret --space "${SPACE}" "${WORKER_NAME}" 2>&1) || {

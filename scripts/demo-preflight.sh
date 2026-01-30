@@ -111,7 +111,8 @@ for REGION in east west; do
         fail "${CONTEXT}: Kyverno not running (run: scripts/bootstrap-kyverno.sh --context ${CONTEXT})"
     fi
 
-    POLICY_COUNT=$(kubectl get clusterpolicy --context "${CONTEXT}" 2>/dev/null | grep -c "True" || echo 0)
+    POLICY_COUNT=$(kubectl get clusterpolicy --context "${CONTEXT}" 2>/dev/null | grep -c "True" || true)
+    POLICY_COUNT=${POLICY_COUNT:-0}
     if [[ ${POLICY_COUNT} -gt 0 ]]; then
         pass "${CONTEXT}: $POLICY_COUNT Kyverno policies loaded"
     else

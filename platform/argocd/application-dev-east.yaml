@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: messagewall-dev-east
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  # Source: ConfigHub space via CMP
+  source:
+    # RepoURL is required by ArgoCD even for CMP plugins. ArgoCD clones this repo
+    # but the CMP plugin ignores the git content and fetches from ConfigHub instead.
+    repoURL: https://github.com/davetashner/serverless-message-wall-demo.git
+    # Path is required but not used by CMP; points to a directory that exists
+    path: platform
+    # Use the ConfigHub CMP plugin
+    plugin:
+      name: confighub
+      env:
+        - name: CONFIGHUB_SPACE
+          value: messagewall-dev-east
+
+  # Destination: the local actuator cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  # Sync policy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignore differences in fields that change frequently
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+    # Crossplane managed resources have status fields that change
+    - group: "*.aws.upbound.io"
+      kind: "*"
+      jsonPointers:
+        - /status
