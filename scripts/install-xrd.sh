@@ -11,13 +11,28 @@
 #   - Crossplane installed with AWS providers
 #
 # Usage:
-#   ./scripts/install-xrd.sh
+#   ./scripts/install-xrd.sh [--context <context>]
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONTEXT="kind-actuator"
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --context)
+            CONTEXT="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--context <context>]"
+            exit 1
+            ;;
+    esac
+done
 
 echo "==> Installing ServerlessEventApp XRD..."
 echo "    Using context: $CONTEXT"

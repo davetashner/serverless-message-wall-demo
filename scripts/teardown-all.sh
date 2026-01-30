@@ -48,9 +48,12 @@ done
 
 # All ConfigHub spaces to clean up
 CONFIGHUB_SPACES=(
-    # Messagewall infrastructure
+    # Messagewall infrastructure (single-region)
     messagewall-dev
     messagewall-prod
+    # Messagewall infrastructure (multi-region)
+    messagewall-dev-east
+    messagewall-dev-west
     # Order Platform - 5 teams × 2 environments
     order-platform-ops-dev
     order-platform-ops-prod
@@ -64,6 +67,9 @@ CONFIGHUB_SPACES=(
     order-compliance-prod
 )
 
+# AWS regions to check for resources
+AWS_REGIONS=(us-east-1 us-west-2)
+
 echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  FULL TEARDOWN"
@@ -71,12 +77,12 @@ echo "════════════════════════�
 echo ""
 echo -e "${RED}This will destroy:${NC}"
 echo "  • Crossplane Claims (triggers AWS resource deletion)"
-echo "  • ArgoCD applications (both clusters)"
-echo "  • All AWS resources managed by Crossplane"
+echo "  • ArgoCD applications (all clusters)"
+echo "  • All AWS resources managed by Crossplane (us-east-1 and us-west-2)"
 echo "  • ConfigHub workers, units, and ${#CONFIGHUB_SPACES[@]} spaces"
-echo "  • Kind clusters (actuator, workload)"
+echo "  • Kind clusters (actuator, actuator-east, actuator-west, workload)"
 if [[ "$FORCE_AWS" == "true" ]]; then
-    echo -e "  • ${YELLOW}Force delete any orphaned AWS resources${NC}"
+    echo -e "  • ${YELLOW}Force delete any orphaned AWS resources (both regions)${NC}"
 fi
 echo ""
 
@@ -96,41 +102,66 @@ echo ""
 echo -e "${YELLOW}Step 1: Delete Crossplane Claims${NC}"
 echo "This triggers deletion of AWS resources..."
 
-if kubectl get crd serverlesseventappclaims.messagewall.demo --context kind-actuator &>/dev/null; then
-    # Delete all ServerlessEventAppClaims
-    CLAIMS=$(kubectl get serverlesseventappclaim --all-namespaces --context kind-actuator -o name 2>/dev/null || true)
-    if [[ -n "$CLAIMS" ]]; then
-        echo "  Deleting Claims:"
-        echo "$CLAIMS" | while read -r claim; do
-            echo "    - $claim"
-        done
-        kubectl delete serverlesseventappclaim --all --all-namespaces --context kind-actuator --wait=false
-        echo -e "  ${GREEN}Claims deleted${NC}"
-    else
-        echo "  No Claims found"
+# Check all possible actuator clusters (single-region and multi-region)
+ACTUATOR_CLUSTERS=()
+for CLUSTER in kind-actuator kind-actuator-east kind-actuator-west; do
+    if kubectl cluster-info --context "$CLUSTER" &>/dev/null; then
+        ACTUATOR_CLUSTERS+=("$CLUSTER")
     fi
-else
-    echo "  ServerlessEventAppClaim CRD not installed"
-fi
+done
 
-# Also delete any orphaned CompositeResources (XRs) not managed by Claims
-if kubectl get crd serverlesseventapps.messagewall.demo --context kind-actuator &>/dev/null; then
-    XRS=$(kubectl get serverlesseventapp --context kind-actuator -o name 2>/dev/null || true)
-    if [[ -n "$XRS" ]]; then
-        echo "  Deleting CompositeResources..."
-        kubectl delete serverlesseventapp --all --context kind-actuator --wait=false
-    fi
+if [[ ${#ACTUATOR_CLUSTERS[@]} -eq 0 ]]; then
+    echo "  No actuator clusters found"
+else
+    for CLUSTER in "${ACTUATOR_CLUSTERS[@]}"; do
+        echo ""
+        echo "Cluster: $CLUSTER"
+
+        if kubectl get crd serverlesseventappclaims.messagewall.demo --context "$CLUSTER" &>/dev/null; then
+            # Delete all ServerlessEventAppClaims
+            CLAIMS=$(kubectl get serverlesseventappclaim --all-namespaces --context "$CLUSTER" -o name 2>/dev/null || true)
+            if [[ -n "$CLAIMS" ]]; then
+                echo "  Deleting Claims:"
+                echo "$CLAIMS" | while read -r claim; do
+                    echo "    - $claim"
+                done
+                kubectl delete serverlesseventappclaim --all --all-namespaces --context "$CLUSTER" --wait=false
+                echo -e "  ${GREEN}Claims deleted${NC}"
+            else
+                echo "  No Claims found"
+            fi
+        else
+            echo "  ServerlessEventAppClaim CRD not installed"
+        fi
+
+        # Also delete any orphaned CompositeResources (XRs) not managed by Claims
+        if kubectl get crd serverlesseventapps.messagewall.demo --context "$CLUSTER" &>/dev/null; then
+            XRS=$(kubectl get serverlesseventapp --context "$CLUSTER" -o name 2>/dev/null || true)
+            if [[ -n "$XRS" ]]; then
+                echo "  Deleting CompositeResources..."
+                kubectl delete serverlesseventapp --all --context "$CLUSTER" --wait=false
+            fi
+        fi
+    done
 fi
 
 echo ""
 
 # ─────────────────────────────────────────────────────────────
-# Step 2: Delete ArgoCD applications from BOTH clusters
+# Step 2: Delete ArgoCD applications from ALL clusters
 # ─────────────────────────────────────────────────────────────
-echo -e "${YELLOW}Step 2: Delete ArgoCD applications (both clusters)${NC}"
+echo -e "${YELLOW}Step 2: Delete ArgoCD applications (all clusters)${NC}"
 echo "ArgoCD apps keep resources alive via self-heal..."
 
-for CLUSTER in kind-actuator kind-workload; do
+# Check all possible clusters
+ALL_CLUSTERS=()
+for CLUSTER in kind-actuator kind-actuator-east kind-actuator-west kind-workload; do
+    if kubectl cluster-info --context "$CLUSTER" &>/dev/null; then
+        ALL_CLUSTERS+=("$CLUSTER")
+    fi
+done
+
+for CLUSTER in "${ALL_CLUSTERS[@]}"; do
     echo ""
     echo "Cluster: $CLUSTER"
     if kubectl get applications -n argocd --context "$CLUSTER" &>/dev/null; then
@@ -155,11 +186,12 @@ done
 echo ""
 echo -e "${YELLOW}Step 3: Wait for Crossplane AWS cleanup${NC}"
 
-# Helper function to empty stuck S3 buckets
+# Helper function to empty stuck S3 buckets for a given cluster
 empty_stuck_s3_buckets() {
+    local cluster=$1
     local stuck_buckets
     # Find S3 bucket resources that are stuck (SYNCED=False, READY=False)
-    stuck_buckets=$(kubectl get managed --context kind-actuator 2>/dev/null | grep 'bucket.s3' | grep -E 'False.*False' | awk '{print $3}' || true)
+    stuck_buckets=$(kubectl get managed --context "$cluster" 2>/dev/null | grep 'bucket.s3' | grep -E 'False.*False' | awk '{print $3}' || true)
     if [[ -n "$stuck_buckets" ]]; then
         for bucket in $stuck_buckets; do
             if [[ -n "$bucket" && "$bucket" != "EXTERNAL-NAME" ]]; then
@@ -170,67 +202,77 @@ empty_stuck_s3_buckets() {
     fi
 }
 
-if kubectl get managed --context kind-actuator &>/dev/null; then
-    echo "Waiting for AWS resources to be deleted (up to 2 minutes)..."
-    SHOWN_STUCK_DIAGNOSTIC=false
-    EMPTIED_BUCKETS=false
-
-    for i in {1..24}; do
-        REMAINING=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/null | wc -l | tr -d ' ')
-        if [[ "$REMAINING" -eq 0 ]]; then
-            echo -e "\n${GREEN}All Crossplane managed resources deleted${NC}"
-            break
-        fi
-
-        # Check for stuck resources
-        STUCK=$(kubectl get managed --context kind-actuator 2>/dev/null | grep -E 'False.*False' || true)
-        if [[ -n "$STUCK" ]]; then
-            # Show diagnostic only once
-            if [[ "$SHOWN_STUCK_DIAGNOSTIC" == "false" ]]; then
-                echo ""
-                echo -e "${CYAN}Some resources are stuck:${NC}"
-                kubectl get managed --context kind-actuator 2>/dev/null | grep -E 'False.*False' | head -5
-                echo ""
-                SHOWN_STUCK_DIAGNOSTIC=true
-            fi
-
-            # Proactively empty S3 buckets (only try once)
-            if [[ "$EMPTIED_BUCKETS" == "false" ]]; then
-                empty_stuck_s3_buckets
-                EMPTIED_BUCKETS=true
-            fi
-        fi
-
-        # Simple progress indicator
-        ELAPSED=$((i * 5))
-        printf "\r  %d resources remaining... (%ds)" "$REMAINING" "$ELAPSED"
-        sleep 5
-    done
-    echo ""  # Clear the progress line
-
-    # Final check
-    REMAINING=$(kubectl get managed --context kind-actuator --no-headers 2>/dev/null | wc -l | tr -d ' ')
-    if [[ "$REMAINING" -gt 0 ]]; then
-        echo -e "${YELLOW}Warning: $REMAINING resources still exist${NC}"
-        kubectl get managed --context kind-actuator 2>/dev/null
+# Wait for Crossplane cleanup on all actuator clusters
+if [[ ${#ACTUATOR_CLUSTERS[@]} -gt 0 ]]; then
+    for CLUSTER in "${ACTUATOR_CLUSTERS[@]}"; do
         echo ""
-        if [[ "$FORCE_AWS" == "true" ]]; then
-            echo -e "${YELLOW}Will force-delete after cluster teardown...${NC}"
+        echo "Cluster: $CLUSTER"
+
+        if kubectl get managed --context "$CLUSTER" &>/dev/null; then
+            echo "  Waiting for AWS resources to be deleted (up to 2 minutes)..."
+            SHOWN_STUCK_DIAGNOSTIC=false
+            EMPTIED_BUCKETS=false
+
+            for i in {1..24}; do
+                REMAINING=$(kubectl get managed --context "$CLUSTER" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                if [[ "$REMAINING" -eq 0 ]]; then
+                    echo -e "\n  ${GREEN}All Crossplane managed resources deleted${NC}"
+                    break
+                fi
+
+                # Check for stuck resources
+                STUCK=$(kubectl get managed --context "$CLUSTER" 2>/dev/null | grep -E 'False.*False' || true)
+                if [[ -n "$STUCK" ]]; then
+                    # Show diagnostic only once
+                    if [[ "$SHOWN_STUCK_DIAGNOSTIC" == "false" ]]; then
+                        echo ""
+                        echo -e "  ${CYAN}Some resources are stuck:${NC}"
+                        kubectl get managed --context "$CLUSTER" 2>/dev/null | grep -E 'False.*False' | head -5
+                        echo ""
+                        SHOWN_STUCK_DIAGNOSTIC=true
+                    fi
+
+                    # Proactively empty S3 buckets (only try once)
+                    if [[ "$EMPTIED_BUCKETS" == "false" ]]; then
+                        empty_stuck_s3_buckets "$CLUSTER"
+                        EMPTIED_BUCKETS=true
+                    fi
+                fi
+
+                # Simple progress indicator
+                ELAPSED=$((i * 5))
+                printf "\r    %d resources remaining... (%ds)" "$REMAINING" "$ELAPSED"
+                sleep 5
+            done
+            echo ""  # Clear the progress line
+
+            # Final check
+            REMAINING=$(kubectl get managed --context "$CLUSTER" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            if [[ "$REMAINING" -gt 0 ]]; then
+                echo -e "  ${YELLOW}Warning: $REMAINING resources still exist${NC}"
+                kubectl get managed --context "$CLUSTER" 2>/dev/null
+                echo ""
+                if [[ "$FORCE_AWS" == "true" ]]; then
+                    echo -e "  ${YELLOW}Will force-delete after cluster teardown...${NC}"
+                else
+                    echo -e "  ${CYAN}Tip: Run with --force-aws to delete orphaned resources${NC}"
+                fi
+            fi
         else
-            echo -e "${CYAN}Tip: Run with --force-aws to delete orphaned resources${NC}"
+            echo "  No managed resources found"
         fi
-    fi
+    done
 else
-    echo "Actuator cluster not reachable, skipping Crossplane cleanup"
+    echo "No actuator clusters found, skipping Crossplane cleanup"
 fi
 
 # ─────────────────────────────────────────────────────────────
-# Step 4: Delete ConfigHub namespace from BOTH clusters (stops workers)
+# Step 4: Delete ConfigHub namespace from ALL clusters (stops workers)
 # ─────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Step 4: Stop ConfigHub workers (both clusters)${NC}"
+echo -e "${YELLOW}Step 4: Stop ConfigHub workers (all clusters)${NC}"
 
-for CLUSTER in kind-actuator kind-workload; do
+for CLUSTER in "${ALL_CLUSTERS[@]}"; do
     echo ""
     echo "Cluster: $CLUSTER"
     if kubectl get namespace confighub --context "$CLUSTER" &>/dev/null; then
@@ -333,68 +375,83 @@ fi
 echo ""
 echo -e "${YELLOW}Step 6: Delete kind clusters${NC}"
 
-if kind get clusters 2>/dev/null | grep -q "^workload$"; then
-    echo "Deleting workload cluster..."
-    kind delete cluster --name workload
-    echo -e "${GREEN}Workload cluster deleted${NC}"
-else
-    echo "Workload cluster not found"
-fi
-
-if kind get clusters 2>/dev/null | grep -q "^actuator$"; then
-    echo "Deleting actuator cluster..."
-    kind delete cluster --name actuator
-    echo -e "${GREEN}Actuator cluster deleted${NC}"
-else
-    echo "Actuator cluster not found"
-fi
+# Delete all possible clusters (single-region and multi-region)
+for CLUSTER_NAME in workload actuator actuator-east actuator-west; do
+    if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+        echo "Deleting $CLUSTER_NAME cluster..."
+        kind delete cluster --name "$CLUSTER_NAME"
+        echo -e "${GREEN}$CLUSTER_NAME cluster deleted${NC}"
+    else
+        echo "$CLUSTER_NAME cluster not found"
+    fi
+done
 
 # ─────────────────────────────────────────────────────────────
 # Step 7: Verify AWS resources are gone (and optionally force-delete)
+# Checks both us-east-1 and us-west-2 regions
 # ─────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Step 7: Verify AWS cleanup${NC}"
+echo -e "${YELLOW}Step 7: Verify AWS cleanup (both regions)${NC}"
 
 AWS_ORPHANS=false
 
-LAMBDAS=$(aws lambda list-functions --query 'Functions[?starts_with(FunctionName, `messagewall`)].FunctionName' --output text 2>/dev/null || true)
-if [[ -n "$LAMBDAS" && "$LAMBDAS" != "None" ]]; then
-    echo -e "${RED}Remaining Lambda functions:${NC} $LAMBDAS"
-    AWS_ORPHANS=true
-else
-    echo -e "${GREEN}No Lambda functions${NC}"
-fi
+# Collect orphaned resources across all regions
+declare -A ALL_LAMBDAS ALL_TABLES ALL_RULES
+ALL_BUCKETS=""
+ALL_ROLES=""
 
-TABLES=$(aws dynamodb list-tables --query 'TableNames[?starts_with(@, `messagewall`)]' --output text 2>/dev/null || true)
-if [[ -n "$TABLES" && "$TABLES" != "None" ]]; then
-    echo -e "${RED}Remaining DynamoDB tables:${NC} $TABLES"
-    AWS_ORPHANS=true
-else
-    echo -e "${GREEN}No DynamoDB tables${NC}"
-fi
+for REGION in "${AWS_REGIONS[@]}"; do
+    echo ""
+    echo "Region: $REGION"
 
+    LAMBDAS=$(aws lambda list-functions --region "$REGION" --query 'Functions[?starts_with(FunctionName, `messagewall`)].FunctionName' --output text 2>/dev/null || true)
+    if [[ -n "$LAMBDAS" && "$LAMBDAS" != "None" ]]; then
+        echo -e "  ${RED}Lambda functions:${NC} $LAMBDAS"
+        ALL_LAMBDAS[$REGION]="$LAMBDAS"
+        AWS_ORPHANS=true
+    else
+        echo -e "  ${GREEN}No Lambda functions${NC}"
+    fi
+
+    TABLES=$(aws dynamodb list-tables --region "$REGION" --query 'TableNames[?starts_with(@, `messagewall`)]' --output text 2>/dev/null || true)
+    if [[ -n "$TABLES" && "$TABLES" != "None" ]]; then
+        echo -e "  ${RED}DynamoDB tables:${NC} $TABLES"
+        ALL_TABLES[$REGION]="$TABLES"
+        AWS_ORPHANS=true
+    else
+        echo -e "  ${GREEN}No DynamoDB tables${NC}"
+    fi
+
+    RULES=$(aws events list-rules --region "$REGION" --query 'Rules[?starts_with(Name, `messagewall`)].Name' --output text 2>/dev/null || true)
+    if [[ -n "$RULES" && "$RULES" != "None" ]]; then
+        echo -e "  ${RED}EventBridge rules:${NC} $RULES"
+        ALL_RULES[$REGION]="$RULES"
+        AWS_ORPHANS=true
+    else
+        echo -e "  ${GREEN}No EventBridge rules${NC}"
+    fi
+done
+
+# S3 buckets are global (check once)
+echo ""
+echo "Global resources:"
 BUCKETS=$(aws s3 ls 2>/dev/null | grep messagewall | awk '{print $3}' || true)
 if [[ -n "$BUCKETS" ]]; then
-    echo -e "${RED}Remaining S3 buckets:${NC} $BUCKETS"
+    echo -e "  ${RED}S3 buckets:${NC} $BUCKETS"
+    ALL_BUCKETS="$BUCKETS"
     AWS_ORPHANS=true
 else
-    echo -e "${GREEN}No S3 buckets${NC}"
+    echo -e "  ${GREEN}No S3 buckets${NC}"
 fi
 
+# IAM roles are global (check once)
 ROLES=$(aws iam list-roles --query 'Roles[?starts_with(RoleName, `messagewall`)].RoleName' --output text 2>/dev/null || true)
 if [[ -n "$ROLES" && "$ROLES" != "None" ]]; then
-    echo -e "${RED}Remaining IAM roles:${NC} $ROLES"
+    echo -e "  ${RED}IAM roles:${NC} $ROLES"
+    ALL_ROLES="$ROLES"
     AWS_ORPHANS=true
 else
-    echo -e "${GREEN}No IAM roles${NC}"
-fi
-
-RULES=$(aws events list-rules --query 'Rules[?starts_with(Name, `messagewall`)].Name' --output text 2>/dev/null || true)
-if [[ -n "$RULES" && "$RULES" != "None" ]]; then
-    echo -e "${RED}Remaining EventBridge rules:${NC} $RULES"
-    AWS_ORPHANS=true
-else
-    echo -e "${GREEN}No EventBridge rules${NC}"
+    echo -e "  ${GREEN}No IAM roles${NC}"
 fi
 
 # Force-delete orphaned AWS resources if requested
@@ -402,25 +459,40 @@ if [[ "$AWS_ORPHANS" == "true" && "$FORCE_AWS" == "true" ]]; then
     echo ""
     echo -e "${YELLOW}Force-deleting orphaned AWS resources...${NC}"
 
-    # Delete EventBridge targets and rules first
-    for RULE in $RULES; do
-        echo "  Deleting EventBridge rule: $RULE"
-        # Get and delete targets first
-        TARGETS=$(aws events list-targets-by-rule --rule "$RULE" --query 'Targets[].Id' --output text 2>/dev/null || true)
-        if [[ -n "$TARGETS" ]]; then
-            aws events remove-targets --rule "$RULE" --ids $TARGETS 2>/dev/null || true
+    # Delete regional resources
+    for REGION in "${AWS_REGIONS[@]}"; do
+        # Delete EventBridge targets and rules
+        if [[ -n "${ALL_RULES[$REGION]:-}" ]]; then
+            for RULE in ${ALL_RULES[$REGION]}; do
+                echo "  Deleting EventBridge rule ($REGION): $RULE"
+                TARGETS=$(aws events list-targets-by-rule --region "$REGION" --rule "$RULE" --query 'Targets[].Id' --output text 2>/dev/null || true)
+                if [[ -n "$TARGETS" ]]; then
+                    aws events remove-targets --region "$REGION" --rule "$RULE" --ids $TARGETS 2>/dev/null || true
+                fi
+                aws events delete-rule --region "$REGION" --name "$RULE" 2>/dev/null || true
+            done
         fi
-        aws events delete-rule --name "$RULE" 2>/dev/null || true
+
+        # Delete Lambda functions
+        if [[ -n "${ALL_LAMBDAS[$REGION]:-}" ]]; then
+            for LAMBDA in ${ALL_LAMBDAS[$REGION]}; do
+                echo "  Deleting Lambda ($REGION): $LAMBDA"
+                aws lambda delete-function --region "$REGION" --function-name "$LAMBDA" 2>/dev/null || true
+            done
+        fi
+
+        # Delete DynamoDB tables
+        if [[ -n "${ALL_TABLES[$REGION]:-}" ]]; then
+            for TABLE in ${ALL_TABLES[$REGION]}; do
+                echo "  Deleting DynamoDB table ($REGION): $TABLE"
+                aws dynamodb delete-table --region "$REGION" --table-name "$TABLE" 2>/dev/null || true
+            done
+        fi
     done
 
-    # Delete Lambda functions
-    for LAMBDA in $LAMBDAS; do
-        echo "  Deleting Lambda: $LAMBDA"
-        aws lambda delete-function --function-name "$LAMBDA" 2>/dev/null || true
-    done
-
+    # Delete global resources
     # Delete IAM roles (delete policies first)
-    for ROLE in $ROLES; do
+    for ROLE in $ALL_ROLES; do
         echo "  Deleting IAM role: $ROLE"
         # Delete inline policies
         POLICIES=$(aws iam list-role-policies --role-name "$ROLE" --query 'PolicyNames' --output text 2>/dev/null || true)
@@ -436,16 +508,10 @@ if [[ "$AWS_ORPHANS" == "true" && "$FORCE_AWS" == "true" ]]; then
     done
 
     # Empty and delete S3 buckets
-    for BUCKET in $BUCKETS; do
+    for BUCKET in $ALL_BUCKETS; do
         echo "  Deleting S3 bucket: $BUCKET"
         aws s3 rm "s3://$BUCKET" --recursive 2>/dev/null || true
         aws s3 rb "s3://$BUCKET" 2>/dev/null || true
-    done
-
-    # Delete DynamoDB tables
-    for TABLE in $TABLES; do
-        echo "  Deleting DynamoDB table: $TABLE"
-        aws dynamodb delete-table --table-name "$TABLE" 2>/dev/null || true
     done
 
     echo -e "${GREEN}Orphaned AWS resources deleted${NC}"
@@ -463,32 +529,21 @@ echo "════════════════════════�
 echo ""
 echo "To start fresh (see beads/current-focus.md for full guide):"
 echo ""
-echo "  # 1. Create clusters"
+echo "  # Option A: Single-region setup"
 echo "  scripts/bootstrap-kind.sh"
-echo "  scripts/bootstrap-workload-cluster.sh"
-echo ""
-echo "  # 2. Build and load microservice image"
-echo "  cd app/microservices && ./build.sh"
-echo "  kind load docker-image messagewall-microservice:latest --name workload"
-echo ""
-echo "  # 3. Install Crossplane and Kyverno on actuator"
-echo "  scripts/bootstrap-crossplane.sh"
-echo "  scripts/bootstrap-aws-providers.sh"
-echo "  scripts/bootstrap-kyverno.sh"
-echo ""
-echo "  # 4. Install ArgoCD on both clusters"
-echo "  scripts/bootstrap-argocd.sh"
-echo "  scripts/bootstrap-workload-argocd.sh"
-echo ""
-echo "  # 5. Create ConfigHub spaces"
-echo "  cub space create messagewall-dev --label Environment=dev --label Application=messagewall"
-echo "  scripts/setup-order-platform-spaces.sh"
-echo ""
-echo "  # 6. Configure ConfigHub credentials"
-echo "  scripts/setup-argocd-confighub-auth.sh"
-echo "  scripts/setup-workload-confighub-auth.sh"
-echo ""
-echo "  # 7. Deploy workloads and infrastructure"
-echo "  scripts/publish-order-platform.sh --apply"
+echo "  scripts/bootstrap-crossplane.sh && scripts/bootstrap-aws-providers.sh"
 echo "  scripts/deploy-messagewall.sh"
+echo ""
+echo "  # Option B: Multi-region setup"
+echo "  scripts/bootstrap-kind.sh --name actuator-east --region us-east-1"
+echo "  scripts/bootstrap-kind.sh --name actuator-west --region us-west-2"
+echo "  scripts/bootstrap-crossplane.sh --context kind-actuator-east"
+echo "  scripts/bootstrap-crossplane.sh --context kind-actuator-west"
+echo "  scripts/bootstrap-aws-providers.sh --context kind-actuator-east"
+echo "  scripts/bootstrap-aws-providers.sh --context kind-actuator-west --profile crossplane-west"
+echo "  scripts/setup-multiregion-spaces.sh"
+echo "  scripts/deploy-messagewall.sh --region east"
+echo "  scripts/deploy-messagewall.sh --region west"
+echo ""
+echo "See docs/demo-guide.md for full multi-region demo instructions."
 echo ""

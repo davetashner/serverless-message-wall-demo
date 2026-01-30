@@ -15,13 +15,17 @@
 #   - MessageWallRoleBoundary IAM policy exists in AWS
 #
 # Usage:
-#   ./scripts/deploy-messagewall.sh [--env dev|prod]
+#   ./scripts/deploy-messagewall.sh [--env dev|prod] [--region east|west]
+#
+# Examples:
+#   ./scripts/deploy-messagewall.sh                    # Single-region (kind-actuator, us-east-1)
+#   ./scripts/deploy-messagewall.sh --region east      # Multi-region east (kind-actuator-east, us-east-1)
+#   ./scripts/deploy-messagewall.sh --region west      # Multi-region west (kind-actuator-west, us-west-2)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONTEXT="kind-actuator"
 
 # Colors
 RED='\033[0;31m'
@@ -31,7 +35,7 @@ NC='\033[0m'
 
 # Default values
 ENVIRONMENT="dev"
-RESOURCE_PREFIX="messagewall"
+REGION=""  # Empty means single-region mode
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -40,13 +44,40 @@ while [[ $# -gt 0 ]]; do
             ENVIRONMENT="$2"
             shift 2
             ;;
+        --region)
+            REGION="$2"
+            if [[ "$REGION" != "east" && "$REGION" != "west" ]]; then
+                echo "ERROR: --region must be 'east' or 'west'"
+                exit 1
+            fi
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--env dev|prod]"
+            echo "Usage: $0 [--env dev|prod] [--region east|west]"
             exit 1
             ;;
     esac
 done
+
+# Set context, AWS region, and resource naming based on --region flag
+if [[ -z "$REGION" ]]; then
+    # Single-region mode (default)
+    CONTEXT="kind-actuator"
+    AWS_REGION="us-east-1"
+    RESOURCE_PREFIX="messagewall"
+    IAM_POLICY_SUFFIX=""
+elif [[ "$REGION" == "east" ]]; then
+    CONTEXT="kind-actuator-east"
+    AWS_REGION="us-east-1"
+    RESOURCE_PREFIX="messagewall-east"
+    IAM_POLICY_SUFFIX="-east"
+elif [[ "$REGION" == "west" ]]; then
+    CONTEXT="kind-actuator-west"
+    AWS_REGION="us-west-2"
+    RESOURCE_PREFIX="messagewall-west"
+    IAM_POLICY_SUFFIX="-west"
+fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════"
@@ -55,6 +86,8 @@ echo "════════════════════════�
 echo ""
 echo "Environment: $ENVIRONMENT"
 echo "Context: $CONTEXT"
+echo "AWS Region: $AWS_REGION"
+echo "Resource Prefix: $RESOURCE_PREFIX"
 echo ""
 
 # ─────────────────────────────────────────────────────────────
@@ -87,13 +120,14 @@ fi
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "  ✓ AWS credentials valid (account: $AWS_ACCOUNT_ID)"
 
-# Check MessageWallRoleBoundary policy exists
-if ! aws iam get-policy --policy-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/MessageWallRoleBoundary" &>/dev/null; then
-    echo -e "${RED}ERROR: MessageWallRoleBoundary IAM policy not found${NC}"
+# Check MessageWallRoleBoundary policy exists (regional variant for multi-region)
+IAM_POLICY_NAME="MessageWallRoleBoundary${IAM_POLICY_SUFFIX}"
+if ! aws iam get-policy --policy-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${IAM_POLICY_NAME}" &>/dev/null; then
+    echo -e "${RED}ERROR: ${IAM_POLICY_NAME} IAM policy not found${NC}"
     echo "Create it first. See docs/setup-actuator-cluster.md"
     exit 1
 fi
-echo "  ✓ MessageWallRoleBoundary policy exists"
+echo "  ✓ ${IAM_POLICY_NAME} policy exists"
 
 echo ""
 
@@ -106,7 +140,7 @@ if kubectl get xrd serverlesseventapps.messagewall.demo --context "$CONTEXT" &>/
     echo "  XRD already installed"
 else
     echo "  Installing XRD..."
-    "$SCRIPT_DIR/install-xrd.sh"
+    "$SCRIPT_DIR/install-xrd.sh" --context "$CONTEXT"
 fi
 
 echo ""
@@ -143,7 +177,7 @@ echo -e "${YELLOW}Step 3: Apply Claim${NC}"
 CLAIM_NAME="${RESOURCE_PREFIX}-${ENVIRONMENT}"
 BUCKET_NAME="${RESOURCE_PREFIX}-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
 
-# Create Claim with correct AWS account ID
+# Create Claim with correct AWS account ID and region
 cat <<EOF | kubectl apply --context "$CONTEXT" -f -
 apiVersion: messagewall.demo/v1alpha1
 kind: ServerlessEventAppClaim
@@ -154,7 +188,7 @@ spec:
   environment: ${ENVIRONMENT}
   awsAccountId: "${AWS_ACCOUNT_ID}"
   resourcePrefix: ${RESOURCE_PREFIX}
-  region: us-east-1
+  region: ${AWS_REGION}
   lambdaMemory: 128
   lambdaTimeout: 10
 EOF
@@ -169,7 +203,7 @@ echo -e "${YELLOW}Step 4: Upload Lambda artifacts${NC}"
 
 echo "  Waiting for S3 bucket to be ready..."
 for i in {1..60}; do
-    if aws s3 ls "s3://${BUCKET_NAME}" &>/dev/null; then
+    if aws s3 ls "s3://${BUCKET_NAME}" --region "$AWS_REGION" &>/dev/null; then
         echo "  ✓ Bucket ready: ${BUCKET_NAME}"
         break
     fi
@@ -182,8 +216,8 @@ for i in {1..60}; do
 done
 
 echo "  Uploading artifacts..."
-aws s3 cp "$API_HANDLER_ZIP" "s3://${BUCKET_NAME}/artifacts/api-handler.zip"
-aws s3 cp "$SNAPSHOT_WRITER_ZIP" "s3://${BUCKET_NAME}/artifacts/snapshot-writer.zip"
+aws s3 cp "$API_HANDLER_ZIP" "s3://${BUCKET_NAME}/artifacts/api-handler.zip" --region "$AWS_REGION"
+aws s3 cp "$SNAPSHOT_WRITER_ZIP" "s3://${BUCKET_NAME}/artifacts/snapshot-writer.zip" --region "$AWS_REGION"
 echo "  ✓ Artifacts uploaded"
 
 echo ""
