@@ -1,0 +1,24 @@
+# Lambda Function URL for messagewall-east api-handler
+# Region: us-east-1
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: FunctionURL
+metadata:
+  name: messagewall-east-api-handler-url
+spec:
+  forProvider:
+    region: us-east-1
+    functionNameRef:
+      name: messagewall-east-api-handler
+    authorizationType: NONE
+    cors:
+      - allowCredentials: false
+        allowHeaders:
+          - "*"
+        allowMethods:
+          - "*"
+        allowOrigins:
+          - "*"
+        maxAge: 3600
+  providerConfigRef:
+    name: default

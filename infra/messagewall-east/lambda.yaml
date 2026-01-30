@@ -1,0 +1,50 @@
+# Lambda functions for messagewall-east
+# Region: us-east-1
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: Function
+metadata:
+  name: messagewall-east-api-handler
+  annotations:
+    crossplane.io/external-name: messagewall-east-api-handler
+spec:
+  forProvider:
+    region: us-east-1
+    runtime: python3.12
+    handler: handler.handler
+    memorySize: 128
+    timeout: 10
+    s3Bucket: messagewall-east-205074708100
+    s3Key: artifacts/api-handler.zip
+    roleRef:
+      name: messagewall-east-api-role
+    environment:
+      - variables:
+          TABLE_NAME: messagewall-east-205074708100
+          EVENT_BUS_NAME: default
+  providerConfigRef:
+    name: default
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: Function
+metadata:
+  name: messagewall-east-snapshot-writer
+  annotations:
+    crossplane.io/external-name: messagewall-east-snapshot-writer
+spec:
+  forProvider:
+    region: us-east-1
+    runtime: python3.12
+    handler: handler.handler
+    memorySize: 128
+    timeout: 10
+    s3Bucket: messagewall-east-205074708100
+    s3Key: artifacts/snapshot-writer.zip
+    roleRef:
+      name: messagewall-east-snapshot-role
+    environment:
+      - variables:
+          TABLE_NAME: messagewall-east-205074708100
+          BUCKET_NAME: messagewall-east-205074708100
+  providerConfigRef:
+    name: default

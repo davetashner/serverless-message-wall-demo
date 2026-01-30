@@ -1,0 +1,140 @@
+# IAM roles for messagewall-east Lambda functions
+# Region: us-east-1
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: messagewall-east-api-role
+  annotations:
+    crossplane.io/external-name: messagewall-east-api-role
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    permissionsBoundary: arn:aws:iam::205074708100:policy/MessageWallRoleBoundaryEast
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicy
+metadata:
+  name: messagewall-east-api-role-policy
+spec:
+  forProvider:
+    roleRef:
+      name: messagewall-east-api-role
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "DynamoDBAccess",
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:GetItem",
+              "dynamodb:PutItem",
+              "dynamodb:UpdateItem",
+              "dynamodb:Query"
+            ],
+            "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-east-*"
+          },
+          {
+            "Sid": "EventBridgeAccess",
+            "Effect": "Allow",
+            "Action": "events:PutEvents",
+            "Resource": "*"
+          },
+          {
+            "Sid": "CloudWatchLogsAccess",
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*:*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: messagewall-east-snapshot-role
+  annotations:
+    crossplane.io/external-name: messagewall-east-snapshot-role
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    permissionsBoundary: arn:aws:iam::205074708100:policy/MessageWallRoleBoundaryEast
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicy
+metadata:
+  name: messagewall-east-snapshot-role-policy
+spec:
+  forProvider:
+    roleRef:
+      name: messagewall-east-snapshot-role
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "DynamoDBReadAccess",
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:GetItem",
+              "dynamodb:Query"
+            ],
+            "Resource": "arn:aws:dynamodb:us-east-1:205074708100:table/messagewall-east-*"
+          },
+          {
+            "Sid": "S3WriteAccess",
+            "Effect": "Allow",
+            "Action": [
+              "s3:PutObject"
+            ],
+            "Resource": "arn:aws:s3:::messagewall-east-*/state.json"
+          },
+          {
+            "Sid": "CloudWatchLogsAccess",
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*:*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default

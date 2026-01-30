@@ -4,9 +4,37 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Defaults
 CLUSTER_CONTEXT="kind-actuator"
 NAMESPACE="crossplane-system"
 RELEASE_NAME="crossplane"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --context)
+            CLUSTER_CONTEXT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--context <kubectl-context>]"
+            echo ""
+            echo "Options:"
+            echo "  --context  Kubernetes context (default: kind-actuator)"
+            echo ""
+            echo "Examples:"
+            echo "  $0                                    # Install on kind-actuator"
+            echo "  $0 --context kind-actuator-east"
+            echo "  $0 --context kind-actuator-west"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
 
 # Check if helm is installed
 if ! command -v helm &> /dev/null; then

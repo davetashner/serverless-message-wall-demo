@@ -19,6 +19,7 @@ This script creates a ConfigHub worker and stores its credentials as a
 Kubernetes Secret that the ArgoCD CMP plugin uses to authenticate.
 
 OPTIONS:
+    --context CONTEXT   Kubernetes context (default: ${CLUSTER_CONTEXT})
     --space NAME        ConfigHub space name (default: ${SPACE})
     --worker-id ID      Use existing worker ID (skip creation)
     --worker-secret SEC Use existing worker secret
@@ -34,6 +35,9 @@ EXAMPLES:
     # Create new worker and configure
     $(basename "$0")
 
+    # Configure for regional cluster
+    $(basename "$0") --context kind-actuator-east --space messagewall-dev-east
+
     # Use existing worker credentials
     $(basename "$0") --worker-id wkr_xxx --worker-secret sec_xxx
 
@@ -47,6 +51,10 @@ WORKER_SECRET=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --context)
+            CLUSTER_CONTEXT="$2"
+            shift 2
+            ;;
         --space)
             SPACE="$2"
             shift 2

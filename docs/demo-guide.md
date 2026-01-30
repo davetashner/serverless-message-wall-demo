@@ -317,6 +317,103 @@ cub unit apply --space messagewall-dev --where "HeadRevisionNum > LiveRevisionNu
 **How ArgoCD Works with This:**
 > "ArgoCD auto-sync is enabled, but the ConfigHub CMP plugin only fetches LiveRevisionNum content. This means CI can push freely without affecting Kubernetes until someone explicitly promotes."
 
+### Part 7: Multi-Region Deployment (10-15 min)
+
+> "What if you need to deploy the same infrastructure across multiple AWS regions?"
+
+**The Multi-Region Architecture:**
+```
+                     ConfigHub (Single Authority)
+                            │
+            ┌───────────────┴───────────────┐
+            │                               │
+            ▼                               ▼
+   messagewall-dev-east             messagewall-dev-west
+            │                               │
+            ▼                               ▼
+   actuator-east (Kind)             actuator-west (Kind)
+   Crossplane + ArgoCD              Crossplane + ArgoCD
+            │                               │
+            ▼                               ▼
+      AWS us-east-1                   AWS us-west-2
+   - messagewall-east-*            - messagewall-west-*
+```
+
+**Key Points:**
+1. **One authority, multiple actuators** - ConfigHub is the single source of truth
+2. **Regional isolation** - Each cluster manages only its region's resources
+3. **Bulk operations** - Update both regions with a single command
+
+**Setup Multi-Region Demo:**
+
+```bash
+# 1. Create regional ConfigHub spaces
+scripts/setup-multiregion-spaces.sh
+
+# 2. Create regional actuator clusters
+scripts/bootstrap-kind.sh --name actuator-east --region us-east-1
+scripts/bootstrap-kind.sh --name actuator-west --region us-west-2
+
+# 3. Install Crossplane on each cluster
+scripts/bootstrap-crossplane.sh --context kind-actuator-east
+scripts/bootstrap-crossplane.sh --context kind-actuator-west
+
+# 4. Install AWS providers
+scripts/bootstrap-aws-providers.sh --context kind-actuator-east
+scripts/bootstrap-aws-providers.sh --context kind-actuator-west
+
+# 5. Install ArgoCD
+scripts/bootstrap-argocd.sh --context kind-actuator-east
+scripts/bootstrap-argocd.sh --context kind-actuator-west
+
+# 6. Configure ConfigHub auth for each cluster
+scripts/setup-argocd-confighub-auth.sh --context kind-actuator-east --space messagewall-dev-east
+scripts/setup-argocd-confighub-auth.sh --context kind-actuator-west --space messagewall-dev-west
+
+# 7. Publish regional manifests
+scripts/publish-messagewall.sh --region east --apply
+scripts/publish-messagewall.sh --region west --apply
+```
+
+**Demonstrate Cross-Region Bulk Update:**
+
+> "Now let's update Lambda timeout across BOTH regions with a single command."
+
+```bash
+# Show current configuration
+./scripts/demo-multiregion-update.sh show
+
+# Update timeout in both regions
+./scripts/demo-multiregion-update.sh timeout 30 --apply
+
+# Verify changes
+./scripts/demo-multiregion-update.sh show
+
+# Reset to defaults
+./scripts/demo-multiregion-update.sh reset --apply
+```
+
+**Watch Reconciliation:**
+```bash
+# In terminal 1: Watch east cluster
+kubectl get functions -w --context kind-actuator-east
+
+# In terminal 2: Watch west cluster
+kubectl get functions -w --context kind-actuator-west
+```
+
+**Key Demo Talking Points:**
+- "One command → ConfigHub → Two spaces → Two clusters → Two AWS regions"
+- "Each region has blast radius isolation - a problem in us-east-1 doesn't affect us-west-2"
+- "Same Crossplane manifests, just parameterized by region"
+- "ArgoCD in each cluster pulls from its regional ConfigHub space"
+
+**Multi-Region Teardown:**
+```bash
+kind delete cluster --name actuator-east
+kind delete cluster --name actuator-west
+```
+
 ---
 
 ## Quick Reference Commands
@@ -396,3 +493,6 @@ Standard IAM policies say what a user CAN do. Permission boundaries cap what rol
 | **Break-Glass Recovery Demo** | `scripts/demo-break-glass-recovery.sh` |
 | **ConfigHub + Crossplane Narrative** | `docs/confighub-crossplane-narrative.md` |
 | ArgoCD + ConfigHub Sync | `docs/decisions/009-argocd-confighub-sync.md`, `platform/argocd/` |
+| **Multi-Region Setup** | `scripts/setup-multiregion-spaces.sh`, `scripts/publish-messagewall.sh` |
+| **Multi-Region Demo Script** | `scripts/demo-multiregion-update.sh` |
+| Multi-Region Manifests | `infra/messagewall-east/`, `infra/messagewall-west/` |

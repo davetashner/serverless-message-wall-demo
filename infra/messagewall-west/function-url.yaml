@@ -1,0 +1,24 @@
+# Lambda Function URL for messagewall-west api-handler
+# Region: us-west-2
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: FunctionURL
+metadata:
+  name: messagewall-west-api-handler-url
+spec:
+  forProvider:
+    region: us-west-2
+    functionNameRef:
+      name: messagewall-west-api-handler
+    authorizationType: NONE
+    cors:
+      - allowCredentials: false
+        allowHeaders:
+          - "*"
+        allowMethods:
+          - "*"
+        allowOrigins:
+          - "*"
+        maxAge: 3600
+  providerConfigRef:
+    name: default

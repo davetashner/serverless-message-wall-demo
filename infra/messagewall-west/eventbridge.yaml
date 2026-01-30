@@ -1,0 +1,52 @@
+# EventBridge rule for messagewall-west
+# Region: us-west-2
+---
+apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
+kind: Rule
+metadata:
+  name: messagewall-west-snapshot-trigger
+  annotations:
+    crossplane.io/external-name: messagewall-west-snapshot-trigger
+spec:
+  forProvider:
+    region: us-west-2
+    eventBusName: default
+    eventPattern: |
+      {
+        "source": ["messagewall.api-handler"],
+        "detail-type": ["MessagePosted"]
+      }
+    state: ENABLED
+  providerConfigRef:
+    name: default
+---
+apiVersion: cloudwatchevents.aws.upbound.io/v1beta1
+kind: Target
+metadata:
+  name: messagewall-west-snapshot-target
+spec:
+  forProvider:
+    region: us-west-2
+    eventBusName: default
+    ruleRef:
+      name: messagewall-west-snapshot-trigger
+    targetId: snapshot-writer
+    arn: arn:aws:lambda:us-west-2:205074708100:function:messagewall-west-snapshot-writer
+  providerConfigRef:
+    name: default
+---
+apiVersion: lambda.aws.upbound.io/v1beta1
+kind: Permission
+metadata:
+  name: messagewall-west-eventbridge-invoke-snapshot
+spec:
+  forProvider:
+    region: us-west-2
+    action: lambda:InvokeFunction
+    functionNameRef:
+      name: messagewall-west-snapshot-writer
+    principal: events.amazonaws.com
+    sourceArn: arn:aws:events:us-west-2:205074708100:rule/messagewall-west-snapshot-trigger
+    statementId: AllowEventBridgeInvoke
+  providerConfigRef:
+    name: default

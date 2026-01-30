@@ -1,0 +1,108 @@
+# S3 Bucket for messagewall-east static website hosting and Lambda artifacts
+# Region: us-east-1
+---
+apiVersion: s3.aws.upbound.io/v1beta2
+kind: Bucket
+metadata:
+  name: messagewall-east-bucket
+  annotations:
+    crossplane.io/external-name: messagewall-east-205074708100
+spec:
+  forProvider:
+    region: us-east-1
+  providerConfigRef:
+    name: default
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketOwnershipControls
+metadata:
+  name: messagewall-east-bucket-ownership
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-east-bucket
+    rule:
+      - objectOwnership: BucketOwnerEnforced
+  providerConfigRef:
+    name: default
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketPublicAccessBlock
+metadata:
+  name: messagewall-east-bucket-public-access
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-east-bucket
+    blockPublicAcls: false
+    blockPublicPolicy: false
+    ignorePublicAcls: false
+    restrictPublicBuckets: false
+  providerConfigRef:
+    name: default
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketWebsiteConfiguration
+metadata:
+  name: messagewall-east-bucket-website
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-east-bucket
+    indexDocument:
+      - suffix: index.html
+    errorDocument:
+      - key: error.html
+  providerConfigRef:
+    name: default
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketCorsConfiguration
+metadata:
+  name: messagewall-east-bucket-cors
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-east-bucket
+    corsRule:
+      - allowedHeaders:
+          - "*"
+        allowedMethods:
+          - GET
+          - POST
+        allowedOrigins:
+          - "*"
+        exposeHeaders:
+          - ETag
+        maxAgeSeconds: 3000
+  providerConfigRef:
+    name: default
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketPolicy
+metadata:
+  name: messagewall-east-bucket-policy
+spec:
+  forProvider:
+    region: us-east-1
+    bucketRef:
+      name: messagewall-east-bucket
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "PublicReadGetObject",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::messagewall-east-205074708100/*"
+          }
+        ]
+      }
+  providerConfigRef:
+    name: default
