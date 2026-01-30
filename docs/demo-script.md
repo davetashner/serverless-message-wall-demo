@@ -75,10 +75,12 @@ Run the preflight check before the demo:
 
 This verifies:
 - Both actuator clusters running (actuator-east, actuator-west)
-- Workload cluster running
+- Workload cluster running (optional - only needed for Parts 8-9)
 - All ConfigHub spaces exist (4 messagewall + 10 order-platform)
 - AWS credentials valid
 - Docker images loaded
+
+**Note:** The workload cluster is only needed for Parts 8-9 (K8s Workloads). You can run Parts 1-7 with just the actuator clusters, saving ~1GB RAM until you need the workload cluster.
 
 ---
 
@@ -408,6 +410,22 @@ cub unit history --space messagewall-prod-east messagewall-prod-east
 ---
 
 ## Part 8: K8s Workloads (10 min)
+
+### Create Workload Cluster (if not running)
+
+If you skipped creating the workload cluster earlier to save RAM, create it now:
+
+```bash
+# Check if workload cluster exists
+kind get clusters | grep workload || scripts/bootstrap-workload-cluster.sh
+
+# Install ArgoCD on workload cluster
+scripts/bootstrap-workload-argocd.sh
+
+# Build and load microservice image
+cd app/microservices && ./build.sh && cd ../..
+kind load docker-image messagewall-microservice:latest --name workload
+```
 
 **Say:**
 > "ConfigHub doesn't just store AWS infrastructure. It also stores Kubernetes application configuration."

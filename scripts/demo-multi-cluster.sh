@@ -51,14 +51,14 @@ print_header "STEP 1: Show Available Clusters"
 print_step "kubectl config get-contexts"
 kubectl config get-contexts
 
-print_narrator "Two clusters: kind-actuator (Crossplane) and kind-workload (microservices)"
+print_narrator "Actuator clusters (Crossplane) and optionally kind-workload (microservices for Parts 8-9)"
 
 pause
 
 print_header "STEP 2: Actuator Cluster - Crossplane Controllers"
 
-print_step "kubectl get pods -n crossplane-system --context kind-actuator"
-kubectl get pods -n crossplane-system --context kind-actuator 2>/dev/null || echo "(Crossplane not installed - run bootstrap scripts first)"
+print_step "kubectl get pods -n crossplane-system --context kind-actuator-east"
+kubectl get pods -n crossplane-system --context kind-actuator-east 2>/dev/null || echo "(Crossplane not installed - run bootstrap scripts first)"
 
 print_narrator "Crossplane controllers manage AWS resources declaratively"
 
@@ -118,7 +118,7 @@ pause
 print_header "STEP 6: ArgoCD Sync Status"
 
 print_step "Actuator cluster ArgoCD:"
-kubectl get application -n argocd --context kind-actuator 2>/dev/null || echo "(ArgoCD not installed)"
+kubectl get application -n argocd --context kind-actuator-east 2>/dev/null || echo "(ArgoCD not installed)"
 
 echo ""
 

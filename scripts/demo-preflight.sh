@@ -50,11 +50,11 @@ else
     fail "actuator-west cluster missing (run: scripts/bootstrap-kind.sh --name actuator-west --region us-west-2)"
 fi
 
-# Check workload cluster
+# Check workload cluster (only needed for Parts 8-9)
 if kind get clusters 2>/dev/null | grep -q "^workload$"; then
     pass "workload cluster exists"
 else
-    fail "workload cluster missing (run: scripts/bootstrap-workload-cluster.sh)"
+    warn "workload cluster not running (only needed for Parts 8-9, run: scripts/bootstrap-workload-cluster.sh)"
 fi
 
 echo ""
