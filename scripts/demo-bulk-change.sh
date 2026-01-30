@@ -38,6 +38,8 @@ CHANGE TYPES:
     timeout <SECONDS>   Set timeout for all Lambda functions (e.g., 15)
     env <NAME=VALUE>    Add/update environment variable on all Lambda functions
     remove-env <NAME>   Remove environment variable from all Lambda functions
+    tag <KEY=VALUE>     Add/update tag on all Lambda functions (e.g., cost-center=messagewall-team)
+    remove-tag <KEY>    Remove tag from all Lambda functions
 
 OPTIONS:
     --space NAME        ConfigHub space (default: ${SPACE})
@@ -62,6 +64,12 @@ EXAMPLES:
 
     # Remove an environment variable
     $(basename "$0") remove-env LOG_LEVEL
+
+    # Add a cost-center tag to all Lambdas
+    $(basename "$0") tag cost-center=messagewall-team
+
+    # Remove a tag
+    $(basename "$0") remove-tag cost-center
 
 WHAT THIS DEMONSTRATES:
     1. Single operation updates BOTH Lambda functions
@@ -119,6 +127,23 @@ case "$CHANGE_TYPE" in
     remove-env)
         if [[ $# -lt 1 ]]; then
             error "Missing NAME for remove-env"
+        fi
+        CHANGE_VALUE="$1"
+        shift
+        ;;
+    tag)
+        if [[ $# -lt 1 ]]; then
+            error "Missing KEY=VALUE for tag"
+        fi
+        CHANGE_VALUE="$1"
+        if [[ ! "$CHANGE_VALUE" =~ ^[a-zA-Z0-9_-]+=.+$ ]]; then
+            error "Invalid tag format. Expected KEY=VALUE (e.g., cost-center=platform)"
+        fi
+        shift
+        ;;
+    remove-tag)
+        if [[ $# -lt 1 ]]; then
+            error "Missing KEY for remove-tag"
         fi
         CHANGE_VALUE="$1"
         shift
@@ -197,7 +222,7 @@ fetch_current_config() {
     # Show current state
     echo ""
     echo "Current Lambda configurations:"
-    yq 'select(.kind == "Function") | {"name": .metadata.name, "memory": .spec.forProvider.memorySize, "timeout": .spec.forProvider.timeout}' "$CURRENT_FILE"
+    yq 'select(.kind == "Function") | {"name": .metadata.name, "memory": .spec.forProvider.memorySize, "timeout": .spec.forProvider.timeout, "tags": .spec.forProvider.tags}' "$CURRENT_FILE"
 }
 
 # Apply memory change
@@ -285,6 +310,43 @@ apply_remove_env_change() {
     fi
 }
 
+# Apply tag change
+apply_tag_change() {
+    local tag_pair="$1"
+    local tag_key="${tag_pair%%=*}"
+    local tag_value="${tag_pair#*=}"
+
+    log "Adding/updating tag ${tag_key}=${tag_value} on all Lambda functions..."
+
+    # Update or add the tag for all Function resources
+    # Tags in Crossplane AWS provider are at: spec.forProvider.tags
+    yq eval '
+        (select(.kind == "Function") | .spec.forProvider.tags.'"$tag_key"') = "'"$tag_value"'"
+    ' "$CURRENT_FILE" > "$MODIFIED_FILE"
+
+    # Generate default description
+    if [[ -z "$CHANGE_DESC" ]]; then
+        CHANGE_DESC="Bulk change: Set ${tag_key}=${tag_value} tag"
+    fi
+}
+
+# Remove tag
+apply_remove_tag_change() {
+    local tag_key="$1"
+
+    log "Removing tag ${tag_key} from all Lambda functions..."
+
+    # Remove the tag for all Function resources
+    yq eval '
+        del(select(.kind == "Function") | .spec.forProvider.tags.'"$tag_key"')
+    ' "$CURRENT_FILE" > "$MODIFIED_FILE"
+
+    # Generate default description
+    if [[ -z "$CHANGE_DESC" ]]; then
+        CHANGE_DESC="Bulk change: Remove ${tag_key} tag"
+    fi
+}
+
 # Show diff
 show_diff() {
     echo ""
@@ -297,7 +359,7 @@ show_diff() {
         diff -u "$CURRENT_FILE" "$MODIFIED_FILE" --color=always || true
     else
         echo "Modified configuration:"
-        yq 'select(.kind == "Function") | {"name": .metadata.name, "memory": .spec.forProvider.memorySize, "timeout": .spec.forProvider.timeout, "env": .spec.forProvider.environment[0].variables}' "$MODIFIED_FILE"
+        yq 'select(.kind == "Function") | {"name": .metadata.name, "memory": .spec.forProvider.memorySize, "timeout": .spec.forProvider.timeout, "env": .spec.forProvider.environment[0].variables, "tags": .spec.forProvider.tags}' "$MODIFIED_FILE"
     fi
 
     echo ""
@@ -445,6 +507,12 @@ main() {
             ;;
         remove-env)
             apply_remove_env_change "$CHANGE_VALUE"
+            ;;
+        tag)
+            apply_tag_change "$CHANGE_VALUE"
+            ;;
+        remove-tag)
+            apply_remove_tag_change "$CHANGE_VALUE"
             ;;
     esac
 
