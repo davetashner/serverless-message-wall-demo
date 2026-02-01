@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConfigHub Concept Explorer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #16213e;
+      padding: 12px 20px;
+      border-bottom: 1px solid #0f3460;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #00d9ff;
+    }
+
+    .presets {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .preset-btn {
+      background: #0f3460;
+      border: 1px solid #1a4a7a;
+      color: #a0c4e8;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .preset-btn:hover {
+      background: #1a4a7a;
+      color: #fff;
+    }
+
+    .preset-btn.active {
+      background: #00d9ff;
+      color: #1a1a2e;
+      border-color: #00d9ff;
+    }
+
+    .main-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .canvas-area {
+      flex: 1;
+      position: relative;
+      background: #0d1117;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .tooltip {
+      position: absolute;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      padding: 10px 14px;
+      max-width: 300px;
+      font-size: 13px;
+      line-height: 1.5;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 100;
+    }
+
+    .tooltip.visible { opacity: 1; }
+
+    .tooltip h4 {
+      color: #00d9ff;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .tooltip code {
+      background: #0d1117;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 12px;
+    }
+
+    .sidebar {
+      width: 320px;
+      background: #16213e;
+      border-left: 1px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-section {
+      padding: 16px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .sidebar-section h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8892b0;
+      margin-bottom: 12px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .node-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 16px 16px;
+    }
+
+    .node-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .node-item:last-child { border-bottom: none; }
+
+    .knowledge-btn {
+      width: 70px;
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .knowledge-btn.know {
+      background: #10b981;
+      color: #fff;
+    }
+
+    .knowledge-btn.fuzzy {
+      background: #f59e0b;
+      color: #1a1a2e;
+    }
+
+    .knowledge-btn.unknown {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .node-name {
+      font-size: 13px;
+      flex: 1;
+    }
+
+    .node-category {
+      font-size: 10px;
+      color: #8892b0;
+      background: #0f3460;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .prompt-area {
+      background: #0d1117;
+      border-top: 1px solid #0f3460;
+      padding: 16px;
+    }
+
+    .prompt-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .prompt-header h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8892b0;
+    }
+
+    .copy-btn {
+      background: #00d9ff;
+      color: #1a1a2e;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #00b8d9;
+    }
+
+    .copy-btn.copied {
+      background: #10b981;
+    }
+
+    .prompt-text {
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #c9d1d9;
+      background: #161b22;
+      padding: 12px;
+      border-radius: 6px;
+      max-height: 150px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .instructions {
+      font-size: 11px;
+      color: #8892b0;
+      margin-top: 8px;
+    }
+
+    .action-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .action-btn {
+      background: #0f3460;
+      border: 1px solid #1a4a7a;
+      color: #a0c4e8;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background: #1a4a7a;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ConfigHub Concept Explorer</h1>
+    <div class="presets">
+      <button class="preset-btn active" onclick="applyPreset('overview')">Overview</button>
+      <button class="preset-btn" onclick="applyPreset('gitops')">GitOps Flow</button>
+      <button class="preset-btn" onclick="applyPreset('multitenancy')">Multi-Tenancy</button>
+      <button class="preset-btn" onclick="applyPreset('beginner')">I'm New</button>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <div class="canvas-area">
+      <canvas id="canvas"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <h3>Knowledge Level Legend</h3>
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #10b981"></div>
+            <span>Know it</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #f59e0b"></div>
+            <span>Fuzzy</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #ef4444"></div>
+            <span>Unknown</span>
+          </div>
+          <div class="legend-item" style="margin-top: 8px; width: 100%;">
+            <svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#f472b6" stroke-width="2" stroke-dasharray="4,3"/></svg>
+            <span>Auth flow</span>
+          </div>
+        </div>
+        <div class="action-btns">
+          <button class="action-btn" onclick="autoLayout()">Auto Layout</button>
+          <button class="action-btn" onclick="resetKnowledge()">Reset All</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h3>Concepts</h3>
+      </div>
+
+      <div class="node-list" id="nodeList"></div>
+    </div>
+  </div>
+
+  <div class="prompt-area">
+    <div class="prompt-header">
+      <h3>Generated Prompt</h3>
+      <button class="copy-btn" id="copyBtn" onclick="copyPrompt()">Copy to Clipboard</button>
+    </div>
+    <div class="prompt-text" id="promptText"></div>
+    <div class="instructions">Click concepts on the canvas or use the sidebar to mark your knowledge level. Drag nodes to rearrange.</div>
+  </div>
+
+  <script>
+    // ConfigHub concepts with descriptions
+    const concepts = [
+      {
+        id: 'confighub',
+        name: 'ConfigHub',
+        category: 'Core',
+        description: 'The configuration authority - a versioned store for all configuration with policy enforcement. Think of it as "the source of truth for what should be deployed."',
+        example: 'cub space list, cub unit get',
+        x: 400, y: 100
+      },
+      {
+        id: 'space',
+        name: 'Space',
+        category: 'Core',
+        description: 'A configuration container with labels. Spaces organize configuration by team, environment, or application. Each space has its own access controls.',
+        example: 'messagewall-dev, order-platform-ops-prod',
+        x: 200, y: 220
+      },
+      {
+        id: 'unit',
+        name: 'Unit',
+        category: 'Core',
+        description: 'An individual configuration item within a space. Units contain versioned content (YAML, JSON) that can be policy-checked before deployment.',
+        example: 'claim/messagewall-dev-east.yaml',
+        x: 400, y: 220
+      },
+      {
+        id: 'worker',
+        name: 'Worker',
+        category: 'Core',
+        description: 'An authenticated service account that can read or write to spaces. The CMP plugin uses Worker credentials to authenticate to ConfigHub. Workers are scoped to specific spaces with defined permissions.',
+        example: 'cub worker create argocd-reader --space messagewall-dev\nCredentials: WORKER_ID + WORKER_SECRET',
+        x: 500, y: 320
+      },
+      {
+        id: 'revision',
+        name: 'Revision',
+        category: 'Versioning',
+        description: 'A versioned snapshot of a unit. Each change creates a new revision. HeadRevisionNum is the latest pushed; LiveRevisionNum is what\'s deployed.',
+        example: 'HeadRevisionNum: 5, LiveRevisionNum: 3',
+        x: 250, y: 340
+      },
+      {
+        id: 'target',
+        name: 'Target',
+        category: 'Deployment',
+        description: 'A deployment destination for configuration. Targets specify which revision of a unit should be deployed to which environment.',
+        example: 'cub unit apply --target prod',
+        x: 680, y: 220
+      },
+      {
+        id: 'argocd',
+        name: 'ArgoCD',
+        category: 'GitOps',
+        description: 'The GitOps operator that syncs configuration from ConfigHub to Kubernetes. Uses a CMP plugin to fetch units from ConfigHub spaces.',
+        example: 'kubectl get applications -n argocd',
+        x: 150, y: 420
+      },
+      {
+        id: 'cmp',
+        name: 'CMP Plugin',
+        category: 'GitOps',
+        description: 'Config Management Plugin - an ArgoCD sidecar that fetches configuration from ConfigHub instead of Git. Authenticates using Worker credentials stored in a Kubernetes secret.',
+        example: 'argocd-cmp-server sidecar\nSecret: confighub-credentials\nKeys: CONFIGHUB_WORKER_ID, CONFIGHUB_WORKER_SECRET',
+        x: 350, y: 420
+      },
+      {
+        id: 'crossplane',
+        name: 'Crossplane',
+        category: 'Actuator',
+        description: 'Kubernetes operator that provisions cloud resources. ConfigHub stores Crossplane claims; Crossplane actuates them to AWS/GCP/Azure.',
+        example: 'ServerlessEventApp claim → S3, Lambda, DynamoDB',
+        x: 550, y: 420
+      },
+      {
+        id: 'claim',
+        name: 'Claim',
+        category: 'Actuator',
+        description: 'A developer-facing abstraction for infrastructure. Claims are simple; Compositions expand them into multiple cloud resources.',
+        example: 'kind: ServerlessEventApp, spec: {region: us-east-1}',
+        x: 700, y: 340
+      },
+      {
+        id: 'labels',
+        name: 'Space Labels',
+        category: 'Organization',
+        description: 'Metadata on spaces for filtering and policy. Common labels: Environment (dev/prod), Application, Team.',
+        example: 'Environment=dev, Application=messagewall',
+        x: 100, y: 300
+      },
+      {
+        id: 'policy',
+        name: 'Policy Checks',
+        category: 'Governance',
+        description: 'Validation rules attached to units or spaces. Policies can block deployment if configuration violates security or compliance rules.',
+        example: 'No secrets in config, required tags present',
+        x: 250, y: 520
+      },
+      {
+        id: 'bulk',
+        name: 'Bulk Changes',
+        category: 'Operations',
+        description: 'Updating multiple units across spaces at once. ConfigHub enables fleet-wide configuration updates with policy checks.',
+        example: 'Update timeout from 30s to 60s across all environments',
+        x: 450, y: 520
+      },
+      {
+        id: 'reconciliation',
+        name: 'Reconciliation',
+        category: 'Operations',
+        description: 'Continuous enforcement that actual state matches desired state. If someone manually changes AWS, Crossplane reverts it.',
+        example: 'Delete Lambda manually → Crossplane recreates it',
+        x: 650, y: 520
+      }
+    ];
+
+    // Relationships between concepts
+    const edges = [
+      { from: 'confighub', to: 'space', label: 'contains' },
+      { from: 'space', to: 'unit', label: 'contains' },
+      { from: 'space', to: 'labels', label: 'has' },
+      { from: 'worker', to: 'space', label: 'accesses' },
+      { from: 'unit', to: 'revision', label: 'has versions' },
+      { from: 'unit', to: 'target', label: 'deployed via' },
+      { from: 'argocd', to: 'cmp', label: 'uses' },
+      { from: 'cmp', to: 'worker', label: 'authenticates via', style: 'auth' },
+      { from: 'worker', to: 'confighub', label: 'calls API', style: 'auth' },
+      { from: 'argocd', to: 'crossplane', label: 'syncs to' },
+      { from: 'crossplane', to: 'claim', label: 'processes' },
+      { from: 'unit', to: 'claim', label: 'stores' },
+      { from: 'unit', to: 'policy', label: 'checked by' },
+      { from: 'space', to: 'bulk', label: 'enables' },
+      { from: 'crossplane', to: 'reconciliation', label: 'performs' }
+    ];
+
+    // State
+    const state = {
+      nodes: concepts.map(c => ({
+        ...c,
+        knowledge: 'fuzzy' // know, fuzzy, unknown
+      })),
+      dragging: null,
+      dragOffset: { x: 0, y: 0 },
+      hovered: null
+    };
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const tooltip = document.getElementById('tooltip');
+    const nodeList = document.getElementById('nodeList');
+    const promptText = document.getElementById('promptText');
+    const copyBtn = document.getElementById('copyBtn');
+
+    const NODE_RADIUS = 40;
+    const COLORS = {
+      know: '#10b981',
+      fuzzy: '#f59e0b',
+      unknown: '#ef4444',
+      edge: '#3b4a6b',
+      edgeLabel: '#8892b0',
+      auth: '#f472b6',
+      text: '#ffffff',
+      categoryColors: {
+        'Core': '#00d9ff',
+        'Versioning': '#a78bfa',
+        'Deployment': '#f472b6',
+        'GitOps': '#34d399',
+        'Actuator': '#fb923c',
+        'Organization': '#60a5fa',
+        'Governance': '#f87171',
+        'Operations': '#a3e635'
+      }
+    };
+
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      draw();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw regular edges first
+      edges.filter(e => !e.style).forEach(edge => {
+        const from = state.nodes.find(n => n.id === edge.from);
+        const to = state.nodes.find(n => n.id === edge.to);
+        if (from && to) {
+          drawEdge(from, to, edge.label, null);
+        }
+      });
+
+      // Draw styled edges on top
+      edges.filter(e => e.style).forEach(edge => {
+        const from = state.nodes.find(n => n.id === edge.from);
+        const to = state.nodes.find(n => n.id === edge.to);
+        if (from && to) {
+          drawEdge(from, to, edge.label, edge.style);
+        }
+      });
+
+      // Draw nodes
+      state.nodes.forEach(node => {
+        drawNode(node);
+      });
+    }
+
+    function drawEdge(from, to, label, style) {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      const startX = from.x + nx * NODE_RADIUS;
+      const startY = from.y + ny * NODE_RADIUS;
+      const endX = to.x - nx * (NODE_RADIUS + 8);
+      const endY = to.y - ny * (NODE_RADIUS + 8);
+
+      const isAuth = style === 'auth';
+      const color = isAuth ? COLORS.auth : COLORS.edge;
+
+      ctx.beginPath();
+      if (isAuth) {
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 2.5;
+      } else {
+        ctx.setLineDash([]);
+        ctx.lineWidth = 2;
+      }
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Arrow head
+      const angle = Math.atan2(dy, dx);
+      const headLen = 10;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // Label
+      const midX = (from.x + to.x) / 2;
+      const midY = (from.y + to.y) / 2;
+      ctx.font = '10px system-ui';
+      ctx.fillStyle = isAuth ? COLORS.auth : COLORS.edgeLabel;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, midX, midY - 5);
+    }
+
+    function drawNode(node) {
+      const isHovered = state.hovered === node.id;
+      const scale = isHovered ? 1.1 : 1;
+      const radius = NODE_RADIUS * scale;
+
+      // Outer ring (category color)
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius + 3, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.categoryColors[node.category] || '#666';
+      ctx.fill();
+
+      // Inner circle (knowledge color)
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS[node.knowledge];
+      ctx.fill();
+
+      // Text
+      ctx.font = `${isHovered ? 'bold ' : ''}12px system-ui`;
+      ctx.fillStyle = node.knowledge === 'fuzzy' ? '#1a1a2e' : COLORS.text;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Word wrap for long names
+      const words = node.name.split(' ');
+      if (words.length > 1 && node.name.length > 10) {
+        ctx.fillText(words[0], node.x, node.y - 7);
+        ctx.fillText(words.slice(1).join(' '), node.x, node.y + 7);
+      } else {
+        ctx.fillText(node.name, node.x, node.y);
+      }
+    }
+
+    function getNodeAt(x, y) {
+      for (let i = state.nodes.length - 1; i >= 0; i--) {
+        const node = state.nodes[i];
+        const dx = x - node.x;
+        const dy = y - node.y;
+        if (dx * dx + dy * dy < NODE_RADIUS * NODE_RADIUS) {
+          return node;
+        }
+      }
+      return null;
+    }
+
+    function cycleKnowledge(node) {
+      const cycle = ['know', 'fuzzy', 'unknown'];
+      const idx = cycle.indexOf(node.knowledge);
+      node.knowledge = cycle[(idx + 1) % cycle.length];
+      draw();
+      renderNodeList();
+      updatePrompt();
+    }
+
+    // Canvas event handlers
+    canvas.addEventListener('mousedown', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const node = getNodeAt(x, y);
+
+      if (node) {
+        if (e.shiftKey) {
+          cycleKnowledge(node);
+        } else {
+          state.dragging = node;
+          state.dragOffset = { x: x - node.x, y: y - node.y };
+        }
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (state.dragging) {
+        state.dragging.x = x - state.dragOffset.x;
+        state.dragging.y = y - state.dragOffset.y;
+        draw();
+      } else {
+        const node = getNodeAt(x, y);
+        if (node !== state.hovered) {
+          state.hovered = node ? node.id : null;
+          draw();
+
+          if (node) {
+            tooltip.innerHTML = `
+              <h4>${node.name}</h4>
+              <p>${node.description}</p>
+              <p style="margin-top: 8px"><code>${node.example}</code></p>
+            `;
+            tooltip.style.left = (e.clientX - rect.left + 15) + 'px';
+            tooltip.style.top = (e.clientY - rect.top + 15) + 'px';
+            tooltip.classList.add('visible');
+          } else {
+            tooltip.classList.remove('visible');
+          }
+        } else if (node) {
+          tooltip.style.left = (e.clientX - rect.left + 15) + 'px';
+          tooltip.style.top = (e.clientY - rect.top + 15) + 'px';
+        }
+      }
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      state.dragging = null;
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      state.dragging = null;
+      state.hovered = null;
+      tooltip.classList.remove('visible');
+      draw();
+    });
+
+    canvas.addEventListener('dblclick', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const node = getNodeAt(x, y);
+      if (node) {
+        cycleKnowledge(node);
+      }
+    });
+
+    // Sidebar node list
+    function renderNodeList() {
+      const categories = [...new Set(state.nodes.map(n => n.category))];
+      nodeList.innerHTML = '';
+
+      categories.forEach(category => {
+        const categoryNodes = state.nodes.filter(n => n.category === category);
+        categoryNodes.forEach(node => {
+          const item = document.createElement('div');
+          item.className = 'node-item';
+          item.innerHTML = `
+            <button class="knowledge-btn ${node.knowledge}" onclick="toggleKnowledge('${node.id}')">${capitalize(node.knowledge)}</button>
+            <span class="node-name">${node.name}</span>
+            <span class="node-category" style="color: ${COLORS.categoryColors[node.category]}">${node.category}</span>
+          `;
+          nodeList.appendChild(item);
+        });
+      });
+    }
+
+    function toggleKnowledge(nodeId) {
+      const node = state.nodes.find(n => n.id === nodeId);
+      if (node) {
+        cycleKnowledge(node);
+      }
+    }
+
+    function capitalize(s) {
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
+    // Prompt generation
+    function updatePrompt() {
+      const know = state.nodes.filter(n => n.knowledge === 'know').map(n => n.name);
+      const fuzzy = state.nodes.filter(n => n.knowledge === 'fuzzy').map(n => n.name);
+      const unknown = state.nodes.filter(n => n.knowledge === 'unknown').map(n => n.name);
+
+      let prompt = 'I\'m learning about ConfigHub, a configuration authority system.\n\n';
+
+      if (know.length > 0) {
+        prompt += `I already understand: ${know.join(', ')}.\n\n`;
+      }
+
+      if (fuzzy.length > 0) {
+        prompt += `I\'m fuzzy on these concepts and need clarification: ${fuzzy.join(', ')}.\n\n`;
+      }
+
+      if (unknown.length > 0) {
+        prompt += `I have no idea about: ${unknown.join(', ')}.\n\n`;
+      }
+
+      // Add relevant relationships
+      const relevantEdges = edges.filter(e => {
+        const fromNode = state.nodes.find(n => n.id === e.from);
+        const toNode = state.nodes.find(n => n.id === e.to);
+        return (fromNode && toNode &&
+          (fromNode.knowledge !== 'know' || toNode.knowledge !== 'know'));
+      });
+
+      if (relevantEdges.length > 0) {
+        prompt += 'Key relationships I want to understand:\n';
+        relevantEdges.slice(0, 8).forEach(e => {
+          const from = state.nodes.find(n => n.id === e.from);
+          const to = state.nodes.find(n => n.id === e.to);
+          prompt += `- ${from.name} ${e.label} ${to.name}\n`;
+        });
+        prompt += '\n';
+      }
+
+      prompt += 'Please explain the fuzzy and unknown concepts, focusing on these relationships. ';
+      prompt += 'Build on what I already know. Use concrete examples from a serverless application deployment scenario.';
+
+      promptText.textContent = prompt;
+    }
+
+    function copyPrompt() {
+      navigator.clipboard.writeText(promptText.textContent).then(() => {
+        copyBtn.textContent = 'Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = 'Copy to Clipboard';
+          copyBtn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    // Presets
+    function applyPreset(preset) {
+      document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      switch (preset) {
+        case 'overview':
+          state.nodes.forEach(n => n.knowledge = 'fuzzy');
+          break;
+        case 'gitops':
+          state.nodes.forEach(n => {
+            if (['argocd', 'cmp', 'crossplane'].includes(n.id)) {
+              n.knowledge = 'unknown';
+            } else if (['confighub', 'space', 'unit'].includes(n.id)) {
+              n.knowledge = 'know';
+            } else {
+              n.knowledge = 'fuzzy';
+            }
+          });
+          break;
+        case 'multitenancy':
+          state.nodes.forEach(n => {
+            if (['space', 'labels', 'worker', 'bulk'].includes(n.id)) {
+              n.knowledge = 'unknown';
+            } else if (['confighub'].includes(n.id)) {
+              n.knowledge = 'know';
+            } else {
+              n.knowledge = 'fuzzy';
+            }
+          });
+          break;
+        case 'beginner':
+          state.nodes.forEach(n => n.knowledge = 'unknown');
+          break;
+      }
+
+      draw();
+      renderNodeList();
+      updatePrompt();
+    }
+
+    // Actions
+    function autoLayout() {
+      // Simple force-directed layout
+      const iterations = 150;
+      const repulsion = 8000;
+      const attraction = 0.05;
+      const damping = 0.85;
+
+      const velocities = state.nodes.map(() => ({ vx: 0, vy: 0 }));
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+
+      for (let iter = 0; iter < iterations; iter++) {
+        // Repulsion between all pairs
+        for (let i = 0; i < state.nodes.length; i++) {
+          for (let j = i + 1; j < state.nodes.length; j++) {
+            const dx = state.nodes[j].x - state.nodes[i].x;
+            const dy = state.nodes[j].y - state.nodes[i].y;
+            const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+            const force = repulsion / (dist * dist);
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            velocities[i].vx -= fx;
+            velocities[i].vy -= fy;
+            velocities[j].vx += fx;
+            velocities[j].vy += fy;
+          }
+        }
+
+        // Attraction along edges
+        edges.forEach(edge => {
+          const fromIdx = state.nodes.findIndex(n => n.id === edge.from);
+          const toIdx = state.nodes.findIndex(n => n.id === edge.to);
+          if (fromIdx >= 0 && toIdx >= 0) {
+            const from = state.nodes[fromIdx];
+            const to = state.nodes[toIdx];
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            velocities[fromIdx].vx += dx * attraction;
+            velocities[fromIdx].vy += dy * attraction;
+            velocities[toIdx].vx -= dx * attraction;
+            velocities[toIdx].vy -= dy * attraction;
+          }
+        });
+
+        // Center gravity
+        state.nodes.forEach((node, i) => {
+          velocities[i].vx += (centerX - node.x) * 0.001;
+          velocities[i].vy += (centerY - node.y) * 0.001;
+        });
+
+        // Apply velocities with damping
+        state.nodes.forEach((node, i) => {
+          velocities[i].vx *= damping;
+          velocities[i].vy *= damping;
+          node.x += velocities[i].vx;
+          node.y += velocities[i].vy;
+          // Keep in bounds
+          node.x = Math.max(NODE_RADIUS + 10, Math.min(canvas.width - NODE_RADIUS - 10, node.x));
+          node.y = Math.max(NODE_RADIUS + 10, Math.min(canvas.height - NODE_RADIUS - 10, node.y));
+        });
+      }
+
+      draw();
+    }
+
+    function resetKnowledge() {
+      state.nodes.forEach(n => n.knowledge = 'fuzzy');
+      draw();
+      renderNodeList();
+      updatePrompt();
+    }
+
+    // Initialize
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    renderNodeList();
+    updatePrompt();
+  </script>
+</body>
+</html>
