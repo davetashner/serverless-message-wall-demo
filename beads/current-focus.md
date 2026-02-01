@@ -1,6 +1,6 @@
 # Current Focus
 
-Last updated: 2026-01-29
+Last updated: 2026-01-30
 
 ## Demo Goal: E2E with Multi-Tenancy
 
@@ -152,6 +152,81 @@ cub worker update argocd-reader --space order-platform-ops-dev --org-role admin
 kubectl patch deployment argocd-repo-server -n argocd --type json \
   -p '[{"op": "remove", "path": "/spec/template/spec/containers/1/env/1"}]'
 ```
+
+---
+
+## Session 2026-01-30: Multi-Region XRD Demo Prep
+
+### Progress Made
+
+**East Region (us-east-1) - WORKING:**
+- ✅ XRD and Composition applied to `kind-actuator-east`
+- ✅ Claim `messagewall-dev-east` deployed via Crossplane
+- ✅ All 17 AWS resources created (S3, DynamoDB, Lambda, EventBridge, IAM)
+- ✅ Lambda artifacts uploaded to `messagewall-east-dev-205074708100`
+- ✅ Static website deployed
+- ✅ Function URL working: `https://thphwfdj6atcicaet3e4bmoyei0jfiwz.lambda-url.us-east-1.on.aws/`
+- ✅ End-to-end flow tested: POST → DynamoDB → EventBridge → state.json
+
+**West Region (us-west-2) - IN PROGRESS:**
+- ✅ XRD and Composition applied to `kind-actuator-west`
+- ✅ Claim `messagewall-dev-west` created
+- ✅ Lambda artifacts uploaded to `messagewall-west-dev-205074708100`
+- ✅ Permissions boundary updated to include us-west-2
+- ⏳ Function URL permission not syncing (Crossplane reconciliation issues)
+- ⏳ Kind cluster stability issues (Kyverno pods restarting)
+
+### Composition Fix Made
+
+Added missing `function-url-permission` resource to the composition at `platform/crossplane/compositions/serverless-event-app-aws.yaml`. This creates the Lambda resource-based policy required for public Function URL access.
+
+### Known Issues (Session 2026-01-30)
+
+**MessageWallRoleBoundary - Multi-Region:**
+The permissions boundary only allowed `us-east-1`. Updated to include both regions:
+```bash
+# Fixed in AWS IAM policy v2
+arn:aws:dynamodb:us-east-1:... AND arn:aws:dynamodb:us-west-2:...
+arn:aws:logs:us-east-1:... AND arn:aws:logs:us-west-2:...
+```
+
+**Kind Cluster Stability:**
+The `kind-actuator-west` cluster has intermittent stability issues:
+- Kyverno pods restarting frequently
+- Crossplane timeouts
+- etcd request timeouts
+
+**Function URL Permission Not Syncing:**
+The Crossplane FunctionURL and Permission resources show stale status. May need:
+1. Delete the claim and recreate
+2. Or manually clear stuck annotations
+
+### Next Steps
+
+1. **Fix West Deployment:**
+   - Investigate Kind cluster stability
+   - Ensure FunctionURL and Permission resources sync properly
+   - Test end-to-end west flow
+
+2. **Verify Both Regions:**
+   ```bash
+   # East
+   curl -X POST https://thphwfdj6atcicaet3e4bmoyei0jfiwz.lambda-url.us-east-1.on.aws/ \
+     -H "Content-Type: application/json" -d '{"text":"East test"}'
+
+   # West (once working)
+   curl -X POST <west-url> -H "Content-Type: application/json" -d '{"text":"West test"}'
+   ```
+
+3. **Update index.html URLs:**
+   - East website needs east API URL
+   - West website needs west API URL
+
+4. **Run Demo Script (Part 2-3 of docs/demo-script.md)**
+
+### New Backlog Item
+
+Added **EPIC-43: Platform configuration in ConfigHub** - Store XRDs, Compositions, and ProviderConfigs in a dedicated `messagewall-platform` ConfigHub space for versioned, auditable platform changes.
 
 ---
 

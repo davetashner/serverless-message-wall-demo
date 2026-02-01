@@ -1,8 +1,10 @@
-# Demo Script: ConfigHub as Single Authority
+# Demo Script: ConfigHub as Configuration Data Substrate
 
-This is the primary demo script for presenting the serverless message wall and Order Platform demos. It shows ConfigHub as the single authority for both AWS infrastructure (via Crossplane) and Kubernetes workloads (via ArgoCD).
+This is the primary demo script for presenting the serverless message wall and Order Platform demos. It shows ConfigHub as a **configuration data substrate** where multiple sources (Developers, Security, FinOps, SRE, CI/CD) read and write configuration - not just a developer tool.
 
-**Total time:** ~55-60 minutes (can be shortened by skipping Parts 5, 7)
+**Key message:** A service's configuration is no longer owned by developers in isolation. ConfigHub aggregates changes from across the organization with full audit trail.
+
+**Total time:** ~58-64 minutes (can be shortened by skipping Parts 5, 7)
 
 ---
 
@@ -60,6 +62,12 @@ This is the primary demo script for presenting the serverless message wall and O
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Part 9: Bulk Security Edit (5-7 min)                                     │
 │   Change all deployments from permissive to restricted security          │
+└──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Part 10: Multi-Source Configuration (5 min)                              │
+│   Show how Security, FinOps, SRE all write to the same config substrate  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -551,9 +559,93 @@ kubectl get pod -n platform-ops-dev -l app=heartbeat \
 
 ---
 
+## Part 10: Multi-Source Configuration (5 min)
+
+**Say:**
+> "Here's a key insight: configuration is no longer something a developer owns in isolation. ConfigHub is a **configuration data substrate** where multiple systems read and write on behalf of the organization."
+
+### Show Multi-Source Change Scenario
+
+**Explain the scenario:**
+> "Let's trace how a single Lambda function's configuration accumulates changes from multiple sources over time."
+
+```bash
+# Show current state of a Lambda (after all previous demo parts)
+cub unit get --space messagewall-dev-east messagewall-dev-east --data-only | \
+  yq '.spec' | head -20
+```
+
+### Demonstrate Multiple Change Sources
+
+**Walk through the different "authors" that modify configuration:**
+
+| Source | Change | Why |
+|--------|--------|-----|
+| **Developer** | Initial claim, feature flags | Application functionality |
+| **Security Team** | `SECURITY_LOG_ENDPOINT` env var | Compliance requirement |
+| **FinOps/Cost** | Memory adjusted from 128→256 MB | Cost optimization after analysis |
+| **SRE/Reliability** | Timeout increased to 30s | Stability improvement |
+| **CI/CD Pipeline** | Version tags, build metadata | Deployment tracking |
+
+```bash
+# Security team adds logging endpoint (simulated)
+./scripts/demo-bulk-change.sh env SECURITY_LOG_ENDPOINT=https://security.internal/ingest \
+  --space messagewall-dev-east \
+  --desc "SEC-2024-001: Add security audit logging" \
+  --dry-run
+
+# FinOps adjusts memory after cost analysis (simulated)
+./scripts/demo-bulk-change.sh memory 256 \
+  --space messagewall-dev-east \
+  --desc "FINOPS-Q4: Optimize Lambda memory allocation" \
+  --dry-run
+
+# SRE adds reliability tag (simulated)
+./scripts/demo-bulk-change.sh tag oncall-team=platform \
+  --space messagewall-dev-east \
+  --desc "SRE: Tag for incident routing" \
+  --dry-run
+```
+
+### The Key Insight
+
+**Say:**
+> "Notice that the developer didn't make any of these changes. Security, FinOps, and SRE teams each modified the service's configuration based on organizational policies.
+>
+> **This is the paradigm shift:** A service's configuration isn't owned by one team. It's a shared data substrate that multiple systems write to:
+> - Security systems enforce compliance
+> - Cost optimization systems tune resource allocation
+> - Reliability systems add operational metadata
+> - AI agents (future) propose optimizations
+>
+> ConfigHub makes this safe by providing:
+> - **Audit trail**: Every change has an author and reason
+> - **Version history**: See exactly what changed and when
+> - **Review gates**: High-risk changes require approval
+> - **Rollback**: Any revision can be restored"
+
+### View the Change History
+
+```bash
+# Show revision history - multiple authors, multiple reasons
+cub unit get --space messagewall-dev-east messagewall-dev-east
+
+# Each revision shows: who, when, why
+```
+
+**Say:**
+> "In the future, AI agents will also propose configuration changes. The same substrate that accepts changes from Security, FinOps, and SRE will accept agent-proposed optimizations - with the same audit trail and approval gates."
+
+---
+
 ## Closing
 
 > "Let me summarize what we've seen:
+>
+> **ConfigHub is a configuration data substrate, not just a developer tool:**
+> - Multiple sources write configuration: Developers, Security, FinOps, SRE, CI/CD
+> - No single team 'owns' a service's configuration in isolation
+> - The organization shapes services through policies, not manual coordination
 >
 > **ConfigHub is the single authority for ALL configuration:**
 > - Infrastructure (AWS via Crossplane)
@@ -565,8 +657,11 @@ kubectl get pod -n platform-ops-dev -l app=heartbeat \
 > - Break-glass recovery with audit trail
 > - Bulk operations across many resources
 > - Full version history for every change
+> - Multi-source authorship with unified audit trail
 >
-> **One authority, multiple actuators, continuous enforcement.**"
+> **The future:** AI agents will propose configuration changes through the same substrate - with the same audit trail, approval gates, and rollback capabilities.
+>
+> **One authority, multiple sources, continuous enforcement.**"
 
 ---
 
@@ -607,9 +702,11 @@ cub unit history --space messagewall-dev-east messagewall-dev-east
 | 7 | Break-Glass Recovery | 5-7 min |
 | 8 | K8s Workloads | 10 min |
 | 9 | Bulk Security Edit | 5-7 min |
-| **Total** | | **53-59 min** |
+| 10 | Multi-Source Configuration | 5 min |
+| **Total** | | **58-64 min** |
 
 **For shorter demo:** Skip Parts 5 and 7 (saves ~12 min)
+**For multi-source focus:** Prioritize Parts 9 and 10 to emphasize the substrate concept
 
 ---
 

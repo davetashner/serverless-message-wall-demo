@@ -726,3 +726,50 @@ spec:
                     fmt: "arn:aws:events:%s:%s:rule/%s-snapshot-trigger"
                 toFieldPath: spec.forProvider.sourceArn
 
+          # --- Lambda Permission for Function URL (public access) ---
+          # AWS requires BOTH lambda:InvokeFunctionUrl AND lambda:InvokeFunction
+          # for public function URLs with auth type NONE
+          - name: function-url-permission
+            base:
+              apiVersion: lambda.aws.upbound.io/v1beta1
+              kind: Permission
+              spec:
+                forProvider:
+                  region: us-east-1
+                  action: lambda:InvokeFunctionUrl
+                  functionNameSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      function: api-handler
+                  principal: "*"
+                  statementId: FunctionURLAllowPublicAccess
+                  functionUrlAuthType: NONE
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+
+          # --- Lambda Permission for Function URL invoke (required for public access) ---
+          - name: function-url-invoke-permission
+            base:
+              apiVersion: lambda.aws.upbound.io/v1beta1
+              kind: Permission
+              spec:
+                forProvider:
+                  region: us-east-1
+                  action: lambda:InvokeFunction
+                  functionNameSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      function: api-handler
+                  principal: "*"
+                  statementId: FunctionURLAllowPublicInvoke
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+

@@ -6,6 +6,57 @@ This document explains how bulk configuration changes work in the serverless mes
 
 ---
 
+## The Big Idea: Configuration as a Multi-Source Data Substrate
+
+**A service's configuration is no longer something a developer owns in isolation.**
+
+Traditional model:
+```
+Developer → Git → Deploy → Production
+```
+
+Modern model with ConfigHub:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      ConfigHub (Substrate)                       │
+│                                                                  │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│   │Developer │  │ Security │  │  FinOps  │  │   SRE    │       │
+│   │  writes  │  │  writes  │  │  writes  │  │  writes  │       │
+│   │ features │  │compliance│  │cost tuning│  │ reliability│    │
+│   └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │
+│        │             │             │             │              │
+│        └─────────────┴─────────────┴─────────────┘              │
+│                            │                                     │
+│                     Unified Config                               │
+│                            │                                     │
+│              ┌─────────────┴─────────────┐                      │
+│              ▼                           ▼                      │
+│        Crossplane                    ArgoCD                     │
+│         (AWS)                    (Kubernetes)                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Who Writes Configuration?
+
+| Source | What They Write | Example |
+|--------|-----------------|---------|
+| **Developer** | Features, business logic config | `FEATURE_FLAG_NEW_UI=true` |
+| **Security Team** | Compliance requirements | `SECURITY_LOG_ENDPOINT=https://...` |
+| **FinOps/Cost** | Resource sizing, cost tags | `lambdaMemory: 256`, `cost-center: platform` |
+| **SRE/Reliability** | Operational metadata, scaling | `oncall-team: platform`, `timeout: 30` |
+| **CI/CD Pipeline** | Build info, deployment metadata | `build-sha: abc123`, `deployed-at: ...` |
+| **AI Agents (future)** | Optimization proposals | Memory recommendations, scaling suggestions |
+
+### Why This Matters
+
+1. **No coordination meetings** - Each team writes their policies independently
+2. **Full audit trail** - Every change has an author and reason
+3. **Consistent enforcement** - Policies apply across all services automatically
+4. **Safe rollback** - Any revision can be restored if a policy causes issues
+
+---
+
 ## The Problem: Changing Many Things at Once
 
 Imagine you need to make the same change across many AWS resources:

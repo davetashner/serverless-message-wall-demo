@@ -2,6 +2,23 @@
 
 This document explains how ConfigHub, Crossplane, and AWS work together in the serverless message wall demo. It's designed to be understandable without prior ConfigHub or Crossplane knowledge.
 
+## The Key Insight
+
+**A service's configuration is no longer something a developer owns in isolation.**
+
+ConfigHub is a **configuration data substrate** where multiple organizational systems read and write configuration:
+
+| Source | What They Write | When |
+|--------|-----------------|------|
+| **Developers** | Features, business logic | During development |
+| **Security Team** | Compliance requirements | Policy enforcement |
+| **FinOps** | Cost optimization | After cost analysis |
+| **SRE** | Reliability settings | Incident response |
+| **CI/CD** | Build metadata | Every deployment |
+| **AI Agents** | Optimization proposals | Continuous analysis |
+
+The result: A single service's configuration accumulates changes from across the organization, with full audit trail showing who changed what and why.
+
 ## The Problem We're Solving
 
 Modern cloud infrastructure faces several challenges:
@@ -11,6 +28,7 @@ Modern cloud infrastructure faces several challenges:
 3. **Bulk Changes**: Updating many resources consistently (e.g., patching 50 Lambda functions)
 4. **Audit Trail**: Knowing who changed what, when, and why
 5. **Emergency Access**: Handling incidents while maintaining control
+6. **Multi-Source Authorship**: Multiple teams need to modify the same resources safely
 
 This demo shows how three technologies—ConfigHub, Crossplane, and AWS—work together to solve these problems.
 
