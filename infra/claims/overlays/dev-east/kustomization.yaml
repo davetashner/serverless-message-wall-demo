@@ -21,6 +21,9 @@ patches:
       - op: replace
         path: /spec/resourcePrefix
         value: messagewall-east
+      - op: replace
+        path: /spec/awsAccountId
+        value: "205074708100"
 
 labels:
   - pairs:

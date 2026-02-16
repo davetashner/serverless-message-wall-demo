@@ -2,7 +2,7 @@
 # Test ServerlessEventApp XRD
 #
 # This script provides three test modes:
-#   - unit: Uses crossplane beta render to verify Composition output
+#   - unit: Uses crossplane render to verify Composition output
 #   - integration: Applies Claim and verifies resources are created
 #   - smoke: Posts a message and verifies state.json updates
 #
@@ -61,7 +61,7 @@ run_test() {
 
 # ============================================================
 # UNIT TESTS
-# Uses crossplane beta render to verify Composition output
+# Uses crossplane render to verify Composition output
 # ============================================================
 run_unit_tests() {
     echo ""
@@ -90,11 +90,16 @@ spec:
   eventSource: messagewall.api-handler
 EOF
 
+    # Create a clean function file (crossplane render chokes on leading comments + ---)
+    local clean_func=$(mktemp)
+    grep -v '^#' "$PROJECT_ROOT/platform/crossplane/functions/function-patch-and-transform.yaml" \
+        | grep -v '^---$' > "$clean_func"
+
     # Run crossplane render
     local render_output=$(mktemp)
-    if crossplane beta render "$test_xr" \
+    if crossplane render "$test_xr" \
         "$PROJECT_ROOT/platform/crossplane/compositions/serverless-event-app-aws.yaml" \
-        "$PROJECT_ROOT/platform/crossplane/functions/function-patch-and-transform.yaml" \
+        "$clean_func" \
         > "$render_output" 2>&1; then
 
         # Test: Render produces output
@@ -153,7 +158,7 @@ EOF
         cat "$render_output"
     fi
 
-    rm -f "$test_xr" "$render_output"
+    rm -f "$test_xr" "$render_output" "$clean_func"
 }
 
 # ============================================================

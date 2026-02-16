@@ -41,7 +41,7 @@ Browser ← GET state.json ← S3
 - **snapshot-writer Lambda**: Triggered by EventBridge, reads DynamoDB, writes state.json to S3
 - **S3**: Hosts static website, state.json snapshot, and Lambda artifacts (in `artifacts/` prefix)
 - **Crossplane**: Manages all AWS resources declaratively from Kubernetes
-- **ConfigHub**: Authoritative store for rendered Crossplane manifests
+- **ConfigHub**: Authoritative store for fully-expanded Crossplane managed resources (ADR-014)
 - **ArgoCD**: Syncs configuration from ConfigHub to Kubernetes via CMP plugin
 
 ## Build and Deploy Commands
@@ -67,12 +67,15 @@ cub worker install actuator-sync --space messagewall-dev --provider-types kubern
 # Phase 6: Install ArgoCD (optional, for observability)
 scripts/bootstrap-argocd.sh
 
-# Build Lambda artifacts (future)
+# Render Composition (expands Claim → 19 managed resource YAMLs via crossplane render)
+scripts/render-composition.sh --overlay dev-east --output-dir rendered/dev-east
+
+# Validate rendered resources
+scripts/validate-policies.sh rendered/dev-east
+
+# Build Lambda artifacts
 cd app/api-handler && ./build.sh
 cd app/snapshot-writer && ./build.sh
-
-# Deploy infrastructure to AWS via Crossplane (future)
-scripts/deploy-dev.sh
 
 # Upload static website (future)
 aws s3 sync app/web s3://<bucket-name>
@@ -171,6 +174,7 @@ Key technical decisions are documented in `docs/decisions/`:
 - **ADR-011**: Bidirectional GitOps with ConfigHub as Authority
 - **ADR-012**: Developer Authoring Surface (Claims as canonical)
 - **ADR-013**: ConfigHub Multi-Tenancy Model (space-per-team-per-env)
+- **ADR-014**: ConfigHub Stores Expanded Resources (supersedes ADR-010)
 
 ## Directory Structure
 

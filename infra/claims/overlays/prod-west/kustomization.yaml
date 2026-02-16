@@ -22,6 +22,9 @@ patches:
         path: /spec/resourcePrefix
         value: messagewall-west
       - op: replace
+        path: /spec/awsAccountId
+        value: "205074708100"
+      - op: replace
         path: /spec/lambdaMemory
         value: 256
       - op: replace
