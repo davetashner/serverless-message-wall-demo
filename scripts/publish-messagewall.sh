@@ -1,4 +1,8 @@
 #!/bin/bash
+# DEPRECATED: Replaced by scripts/render-composition.sh + CI workflow (ADR-014)
+# This script used the envsubst template pipeline. The new pipeline uses
+# crossplane beta render to produce fully-expanded managed resources.
+# See: docs/decisions/014-confighub-stores-expanded-resources.md
 set -euo pipefail
 
 # Publish messagewall infrastructure manifests to ConfigHub

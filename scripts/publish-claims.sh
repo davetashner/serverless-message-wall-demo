@@ -1,4 +1,8 @@
 #!/bin/bash
+# DEPRECATED: Replaced by scripts/render-composition.sh + CI workflow (ADR-014)
+# This script published Claims to ConfigHub. The new pipeline renders Claims
+# through the Composition and publishes fully-expanded managed resources.
+# See: docs/decisions/014-confighub-stores-expanded-resources.md
 set -euo pipefail
 
 # Publish rendered Kustomize claims to ConfigHub

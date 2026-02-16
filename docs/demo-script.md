@@ -4,6 +4,8 @@ This is the primary demo script for presenting the serverless message wall and O
 
 **Key message:** A service's configuration is no longer owned by developers in isolation. ConfigHub aggregates changes from across the organization with full audit trail.
 
+**Architecture change (ADR-014):** ConfigHub now stores **fully-expanded Crossplane managed resources** (19 per environment), not abstract Claims. The Composition is rendered at build time via `crossplane render`, giving ConfigHub full resource-level visibility, diffs, and rollback.
+
 **Total time:** ~58-64 minutes (can be shortened by skipping Parts 5, 7)
 
 ---
@@ -18,8 +20,8 @@ This is the primary demo script for presenting the serverless message wall and O
                                     │
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ Part 2: Deploy East (10 min)                                             │
-│   Render claim → ConfigHub → Crossplane → AWS → Browser                  │
+│ Part 2: Render & Deploy East (10 min)                                    │
+│   Render composition → 19 resources → ConfigHub → Crossplane → AWS      │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -37,13 +39,13 @@ This is the primary demo script for presenting the serverless message wall and O
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Part 5: Revision Rollout (5-7 min)                                       │
-│   Stage a change without deploying, then promote                         │
+│   Stage a resource-level change without deploying, then promote          │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Part 6: ConfigHub Exploration (5 min)                                    │
-│   Filter, browse, click into rendered DynamoDB and Lambda configs        │
+│   Filter, browse 19 individual resources per environment                 │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -86,7 +88,8 @@ This verifies:
 - Workload cluster running (optional - only needed for Parts 8-9)
 - All ConfigHub spaces exist (4 messagewall + 10 order-platform)
 - AWS credentials valid
-- Docker images loaded
+- Docker running (required for `crossplane render`)
+- crossplane CLI, kustomize, yq installed
 
 **Note:** The workload cluster is only needed for Parts 8-9 (K8s Workloads). You can run Parts 1-7 with just the actuator clusters, saving ~1GB RAM until you need the workload cluster.
 
@@ -153,33 +156,69 @@ echo "=== PROD ===" && kubectl kustomize infra/claims/overlays/prod-east | grep 
 
 ---
 
-## Part 2: Deploy East (10 min)
+## Part 2: Render & Deploy East (10 min)
 
 **Say:**
-> "Let's deploy to us-east-1. Watch the flow: Git overlay → rendered YAML → ConfigHub → Crossplane → AWS."
+> "Let's deploy to us-east-1. Here's the new pipeline: the Claim goes through the Crossplane Composition at build time, producing 19 fully-expanded AWS resource definitions. ConfigHub stores each one individually."
 
-### Render the Claim
+### Render the Composition
 
 ```bash
-# Render the dev-east claim
-kubectl kustomize infra/claims/overlays/dev-east
+# Render the dev-east claim through the Composition
+./scripts/render-composition.sh --overlay dev-east --output-dir /tmp/rendered/dev-east
 ```
+
+**Say:**
+> "That took the 10-field Claim and expanded it through the Composition into 19 individual AWS resources: S3 bucket, DynamoDB table, two Lambdas, IAM roles, EventBridge rules, permissions..."
+
+### Inspect the Expanded Resources
+
+```bash
+# See what was produced
+ls -1 /tmp/rendered/dev-east/
+
+# Look at a specific resource
+cat /tmp/rendered/dev-east/api-handler.yaml
+```
+
+**Say:**
+> "Each file is a single Crossplane managed resource. This is exactly what Crossplane will reconcile against AWS. No abstraction layer at runtime."
+
+### Validate Policies
+
+```bash
+# Run policy checks on the expanded resources
+./scripts/validate-policies.sh /tmp/rendered/dev-east
+```
+
+**Say:**
+> "Policy validation runs on the fully-expanded resources, not the abstract Claim. We can check Lambda memory bounds, IAM wildcard policies - anything we want - before it ever reaches a cluster."
 
 ### Publish to ConfigHub
 
 ```bash
-# Publish to ConfigHub (creates revision but doesn't apply yet)
-./scripts/publish-claims.sh --overlay dev-east
+# Publish each resource as an individual ConfigHub unit
+SPACE="messagewall-dev-east"
+for yaml in /tmp/rendered/dev-east/*.yaml; do
+  unit=$(basename "$yaml" .yaml)
+  cub unit create --space "$SPACE" "$unit" --allow-exists 2>/dev/null || true
+  cub unit update --space "$SPACE" "$unit" "$yaml" --change-desc "Demo: initial deploy"
+done
 
-# Show in ConfigHub
+# Show all 19 units in ConfigHub
 cub unit list --space messagewall-dev-east
 ```
+
+**Say:**
+> "19 individual units, each queryable, diffable, and independently rollbackable. That's the power of expanding at build time."
 
 ### Apply to Make It Live
 
 ```bash
-# Apply the revision (makes it live for ArgoCD to sync)
-cub unit apply --space messagewall-dev-east messagewall-dev-east
+# Apply all units (makes them live for ArgoCD to sync)
+for unit in $(cub unit list --space messagewall-dev-east --format json | jq -r '.[].name'); do
+  cub unit apply --space messagewall-dev-east "$unit"
+done
 ```
 
 ### Watch Crossplane Reconcile
@@ -190,16 +229,7 @@ kubectl get functions,buckets,tables -w --context kind-actuator-east
 ```
 
 **Say:**
-> "Crossplane sees the claim and creates 17 AWS resources: S3 bucket, DynamoDB table, two Lambda functions, IAM roles, EventBridge rules..."
-
-### Verify in AWS Console
-
-```bash
-# Or via CLI
-aws lambda list-functions --region us-east-1 | grep messagewall-east
-aws dynamodb list-tables --region us-east-1 | grep messagewall-east
-aws s3 ls | grep messagewall-east
-```
+> "Crossplane receives individual managed resources from ArgoCD and reconciles each one against AWS. No Composition evaluation at runtime - that already happened in CI."
 
 ### Open in Browser
 
@@ -220,8 +250,15 @@ open "http://${BUCKET}.s3-website-us-east-1.amazonaws.com/"
 > "Let's quickly do the same for us-west-2."
 
 ```bash
-# Publish and apply in one step
-./scripts/publish-claims.sh --overlay dev-west --apply
+# Render, validate, and publish in one flow
+./scripts/render-composition.sh --overlay dev-west --output-dir /tmp/rendered/dev-west
+
+SPACE="messagewall-dev-west"
+for yaml in /tmp/rendered/dev-west/*.yaml; do
+  unit=$(basename "$yaml" .yaml)
+  cub unit create --space "$SPACE" "$unit" --allow-exists 2>/dev/null || true
+  cub unit update --space "$SPACE" "$unit" "$yaml" --change-desc "Demo: initial deploy" --wait
+done
 
 # Wait for resources (optional, can skip if short on time)
 kubectl wait --for=condition=Ready functions --all --context kind-actuator-west --timeout=120s
@@ -232,7 +269,7 @@ open "http://${BUCKET}.s3-website-us-west-2.amazonaws.com/"
 ```
 
 **Say:**
-> "Now 'us-west-2' in the URL. Dev is running in two regions, managed from a single ConfigHub authority."
+> "Now 'us-west-2' in the URL. Dev is running in two regions. Each region has its own 19-unit ConfigHub space."
 
 ---
 
@@ -248,12 +285,37 @@ open "http://${BUCKET}.s3-website-us-west-2.amazonaws.com/"
 kubectl kustomize infra/claims/overlays/prod-east | grep -E '(lambdaMemory|lambdaTimeout|annotations:|tier:|oncall:)'
 ```
 
+### Render and Compare
+
+```bash
+# Render prod
+./scripts/render-composition.sh --overlay prod-east --output-dir /tmp/rendered/prod-east
+
+# Compare Lambda config: dev vs prod
+echo "=== DEV ===" && grep -E '(memorySize|timeout):' /tmp/rendered/dev-east/api-handler.yaml
+echo "=== PROD ===" && grep -E '(memorySize|timeout):' /tmp/rendered/prod-east/api-handler.yaml
+```
+
+**Say:**
+> "Same Composition, different inputs. Prod Lambdas get 256 MB and 30-second timeouts. The expanded resources show the exact difference."
+
 ### Deploy Both Prod Regions
 
 ```bash
-# Publish both prod overlays
-./scripts/publish-claims.sh --overlay prod-east --apply
-./scripts/publish-claims.sh --overlay prod-west --apply
+# Render and publish prod-east
+for yaml in /tmp/rendered/prod-east/*.yaml; do
+  unit=$(basename "$yaml" .yaml)
+  cub unit create --space messagewall-prod-east "$unit" --allow-exists 2>/dev/null || true
+  cub unit update --space messagewall-prod-east "$unit" "$yaml" --change-desc "Demo: prod deploy"
+done
+
+# Render and publish prod-west
+./scripts/render-composition.sh --overlay prod-west --output-dir /tmp/rendered/prod-west
+for yaml in /tmp/rendered/prod-west/*.yaml; do
+  unit=$(basename "$yaml" .yaml)
+  cub unit create --space messagewall-prod-west "$unit" --allow-exists 2>/dev/null || true
+  cub unit update --space messagewall-prod-west "$unit" "$yaml" --change-desc "Demo: prod deploy"
+done
 ```
 
 ### Verify Prod Resources
@@ -274,91 +336,110 @@ aws lambda get-function-configuration \
 ## Part 5: Revision Rollout (5-7 min)
 
 **Say:**
-> "What if you want to stage a change without deploying it immediately? ConfigHub tracks two revision numbers."
+> "What if you want to stage a change without deploying it immediately? With individual resources in ConfigHub, you can stage changes at the resource level."
 
 ### Explain Head vs Live
 
-> "**HeadRevisionNum** is the latest pushed revision. **LiveRevisionNum** is what's actually deployed. They can differ."
+> "**HeadRevisionNum** is the latest pushed revision. **LiveRevisionNum** is what's actually deployed. They can differ - per resource."
 
 ### Push a Change (Head Only)
 
 ```bash
-# Get current config
-cub unit get --space messagewall-prod-east messagewall-prod-east --data-only > /tmp/claim.yaml
+# Get current api-handler config
+cub unit get --space messagewall-prod-east api-handler --data-only > /tmp/api-handler.yaml
 
-# Edit timeout (30 → 45)
-sed 's/lambdaTimeout: 30/lambdaTimeout: 45/' /tmp/claim.yaml > /tmp/claim-updated.yaml
+# Edit timeout (10 → 45 in the forProvider spec)
+sed 's/timeout: 10/timeout: 45/' /tmp/api-handler.yaml > /tmp/api-handler-updated.yaml
 
 # Push new revision (advances Head, not Live)
-cub unit update --space messagewall-prod-east messagewall-prod-east /tmp/claim-updated.yaml
+cub unit update --space messagewall-prod-east api-handler /tmp/api-handler-updated.yaml \
+  --change-desc "Stage: increase API handler timeout to 45s"
 ```
 
 ### Show the Gap
 
 ```bash
-# See Head vs Live
-cub unit list --space messagewall-prod-east
+# See Head vs Live for api-handler
+cub unit list --space messagewall-prod-east | grep api-handler
 ```
 
 **Say:**
-> "Head is now 2, Live is still 1. Nothing changed in Kubernetes or AWS yet."
+> "Head is now 2, Live is still 1. The other 18 resources are unchanged. Nothing changed in Kubernetes or AWS yet."
 
 ### Show the Diff
 
 ```bash
 # See what would change
-cub unit diff --space messagewall-prod-east messagewall-prod-east
+cub unit diff --space messagewall-prod-east api-handler
 ```
+
+**Say:**
+> "With expanded resources, the diff shows the exact YAML field that changed. Not 'lambdaTimeout went from 30 to 45' on an abstract claim - the actual `spec.forProvider.timeout` on the Lambda Function resource."
 
 ### Promote
 
 ```bash
 # Make it live
-cub unit apply --space messagewall-prod-east messagewall-prod-east
+cub unit apply --space messagewall-prod-east api-handler
 ```
 
 **Say:**
-> "Now Live equals Head. ArgoCD syncs, Crossplane reconciles, and the Lambda timeout updates."
+> "Now Live equals Head for just that one resource. ArgoCD syncs, Crossplane reconciles, and the Lambda timeout updates. The other 18 resources were untouched."
 
 ### What This Enables
 
-> "This enables staged rollouts, change review before deployment, and emergency holds during incidents."
+> "This enables per-resource staged rollouts. Change an IAM policy without touching Lambda. Update S3 CORS without affecting DynamoDB. Surgical precision."
 
 ---
 
 ## Part 6: ConfigHub Exploration (5 min)
 
 **Say:**
-> "Let's explore ConfigHub. Every piece of infrastructure is queryable and browsable."
+> "Let's explore ConfigHub. Every piece of infrastructure is individually queryable and browsable."
 
 ### Open ConfigHub UI
 
 Open the ConfigHub web interface.
 
-### Filter by Environment and Region
-
-- Filter: `Environment=prod`
-- Filter: `Region=us-east-1`
+### Show the 19 Resources
 
 **Say:**
-> "I can filter by any label - environment, region, team, application."
+> "Each environment has 19 individual units. Let's browse them."
+
+```bash
+# List all units in dev-east
+cub unit list --space messagewall-dev-east
+```
 
 ### Click into DynamoDB Table
 
-Navigate to a DynamoDB table unit and show the fully rendered YAML.
+Navigate to the `table` unit and show the fully rendered YAML.
 
 **Say:**
-> "This is the exact configuration that Crossplane applied. Every field is version-controlled and auditable."
+> "This is the exact Crossplane managed resource that gets applied. Every field - billing mode, hash key, range key - is visible and versioned."
 
 ### Click into Lambda Function
 
-Navigate to a Lambda function unit and show:
+Navigate to the `api-handler` unit and show:
 - Memory and timeout settings
-- Environment variables
-- IAM role reference
+- Environment variables (TABLE_NAME, EVENT_BUS_NAME)
+- IAM role selector reference
+- S3 bucket and key for the deployment artifact
 
 **Say:**
-> "If I want to know 'what memory does this Lambda have?' - I don't grep through Terraform or CloudFormation. I query ConfigHub."
+> "If I want to know 'what memory does this Lambda have?' - I don't grep through Terraform or dig into Crossplane Compositions. I query ConfigHub for the `api-handler` unit."
+
+### Click into IAM Role Policy
+
+Navigate to the `api-role-policy` unit and show the embedded JSON policy document.
+
+**Say:**
+> "Even the IAM policy JSON is visible. Security team can audit exactly what permissions exist, per environment, without touching AWS."
+
+### Filter by Kind
+
+**Say:**
+> "I can filter across spaces. Show me all Lambda Functions across all environments, or all IAM Roles."
 
 ---
 
@@ -378,13 +459,13 @@ aws lambda update-function-configuration \
 ```
 
 **Say:**
-> "Emergency fix is live. But now ConfigHub says 256 MB, AWS says 512 MB. They're out of sync."
+> "Emergency fix is live. But now ConfigHub's `api-handler` unit says 256 MB, AWS says 512 MB. They're out of sync."
 
 ### Show the Drift
 
 ```bash
 # ConfigHub still shows old value
-cub unit get --space messagewall-prod-east messagewall-prod-east --data-only | grep lambdaMemory
+cub unit get --space messagewall-prod-east api-handler --data-only | grep memorySize
 
 # AWS shows new value
 aws lambda get-function-configuration \
@@ -399,17 +480,21 @@ aws lambda get-function-configuration \
 ### Reconcile Back to ConfigHub
 
 ```bash
-# Capture AWS state back to ConfigHub
+# Capture AWS state back to ConfigHub (update just the api-handler unit)
 ./scripts/capture-drift-to-confighub.sh \
   --space messagewall-prod-east \
+  --unit api-handler \
   --desc "INC-2024-001: Emergency memory increase for OOM incidents"
 ```
+
+**Say:**
+> "We updated just the `api-handler` unit. The other 18 resources are untouched. Surgical precision for break-glass too."
 
 ### Show Audit Trail
 
 ```bash
-# View the history
-cub unit history --space messagewall-prod-east messagewall-prod-east
+# View the history for the specific resource
+cub unit history --space messagewall-prod-east api-handler
 ```
 
 **Say:**
@@ -570,10 +655,12 @@ kubectl get pod -n platform-ops-dev -l app=heartbeat \
 > "Let's trace how a single Lambda function's configuration accumulates changes from multiple sources over time."
 
 ```bash
-# Show current state of a Lambda (after all previous demo parts)
-cub unit get --space messagewall-dev-east messagewall-dev-east --data-only | \
-  yq '.spec' | head -20
+# Show current state of the api-handler resource (after all previous demo parts)
+cub unit get --space messagewall-dev-east api-handler --data-only | head -30
 ```
+
+**Say:**
+> "This is the fully-expanded Lambda Function resource. Not an abstract claim - the actual managed resource. Multiple teams can modify it directly."
 
 ### Demonstrate Multiple Change Sources
 
@@ -583,7 +670,7 @@ cub unit get --space messagewall-dev-east messagewall-dev-east --data-only | \
 |--------|--------|-----|
 | **Developer** | Initial claim, feature flags | Application functionality |
 | **Security Team** | `SECURITY_LOG_ENDPOINT` env var | Compliance requirement |
-| **FinOps/Cost** | Memory adjusted from 128→256 MB | Cost optimization after analysis |
+| **FinOps/Cost** | Memory adjusted from 128 to 256 MB | Cost optimization after analysis |
 | **SRE/Reliability** | Timeout increased to 30s | Stability improvement |
 | **CI/CD Pipeline** | Version tags, build metadata | Deployment tracking |
 
@@ -591,21 +678,27 @@ cub unit get --space messagewall-dev-east messagewall-dev-east --data-only | \
 # Security team adds logging endpoint (simulated)
 ./scripts/demo-bulk-change.sh env SECURITY_LOG_ENDPOINT=https://security.internal/ingest \
   --space messagewall-dev-east \
+  --unit api-handler \
   --desc "SEC-2024-001: Add security audit logging" \
   --dry-run
 
 # FinOps adjusts memory after cost analysis (simulated)
 ./scripts/demo-bulk-change.sh memory 256 \
   --space messagewall-dev-east \
+  --unit api-handler \
   --desc "FINOPS-Q4: Optimize Lambda memory allocation" \
   --dry-run
 
 # SRE adds reliability tag (simulated)
 ./scripts/demo-bulk-change.sh tag oncall-team=platform \
   --space messagewall-dev-east \
+  --unit api-handler \
   --desc "SRE: Tag for incident routing" \
   --dry-run
 ```
+
+**Say:**
+> "Each of these teams modifies the `api-handler` unit directly. The diff shows exactly which YAML fields changed. No ambiguity."
 
 ### The Key Insight
 
@@ -618,17 +711,19 @@ cub unit get --space messagewall-dev-east messagewall-dev-east --data-only | \
 > - Reliability systems add operational metadata
 > - AI agents (future) propose optimizations
 >
+> And because we store the **expanded resources** (not abstract claims), every change is visible at the exact field level. No Composition expansion needed to understand the impact.
+>
 > ConfigHub makes this safe by providing:
 > - **Audit trail**: Every change has an author and reason
 > - **Version history**: See exactly what changed and when
 > - **Review gates**: High-risk changes require approval
-> - **Rollback**: Any revision can be restored"
+> - **Rollback**: Any revision can be restored - per resource"
 
 ### View the Change History
 
 ```bash
-# Show revision history - multiple authors, multiple reasons
-cub unit get --space messagewall-dev-east messagewall-dev-east
+# Show revision history for api-handler - multiple authors, multiple reasons
+cub unit history --space messagewall-dev-east api-handler
 
 # Each revision shows: who, when, why
 ```
@@ -642,6 +737,11 @@ cub unit get --space messagewall-dev-east messagewall-dev-east
 
 > "Let me summarize what we've seen:
 >
+> **ConfigHub stores fully-expanded resources, not abstract claims:**
+> - 19 individual AWS resources per environment, each queryable and rollbackable
+> - The Composition runs at build time, not runtime - Crossplane is a pure reconciler
+> - Diffs, policy checks, and approval gates operate on the actual resources
+>
 > **ConfigHub is a configuration data substrate, not just a developer tool:**
 > - Multiple sources write configuration: Developers, Security, FinOps, SRE, CI/CD
 > - No single team 'owns' a service's configuration in isolation
@@ -653,7 +753,7 @@ cub unit get --space messagewall-dev-east messagewall-dev-east
 > - Multi-region, multi-environment, multi-team
 >
 > **Key capabilities:**
-> - Staged rollouts (Head vs Live)
+> - Per-resource staged rollouts (Head vs Live)
 > - Break-glass recovery with audit trail
 > - Bulk operations across many resources
 > - Full version history for every change
@@ -670,8 +770,17 @@ cub unit get --space messagewall-dev-east messagewall-dev-east
 ### Key Commands
 
 ```bash
-# Publish claims
-./scripts/publish-claims.sh --overlay dev-east --apply
+# Render composition (expands Claim → 19 managed resources)
+./scripts/render-composition.sh --overlay dev-east --output-dir /tmp/rendered/dev-east
+
+# Validate rendered resources
+./scripts/validate-policies.sh /tmp/rendered/dev-east
+
+# Publish rendered resources to ConfigHub
+for yaml in /tmp/rendered/dev-east/*.yaml; do
+  unit=$(basename "$yaml" .yaml)
+  cub unit update --space messagewall-dev-east "$unit" "$yaml" --change-desc "CI: deploy"
+done
 
 # Publish Order Platform
 ./scripts/publish-order-platform.sh --apply
@@ -682,11 +791,11 @@ cub unit get --space messagewall-dev-east messagewall-dev-east
 # View ConfigHub spaces
 cub space list
 
-# View units in a space
+# View units in a space (19 resources per messagewall env)
 cub unit list --space messagewall-dev-east
 
-# View revision history
-cub unit history --space messagewall-dev-east messagewall-dev-east
+# View revision history for a specific resource
+cub unit history --space messagewall-dev-east api-handler
 ```
 
 ### Timing Cheat Sheet
@@ -694,7 +803,7 @@ cub unit history --space messagewall-dev-east messagewall-dev-east
 | Part | Topic | Time |
 |------|-------|------|
 | 1 | The Claim | 5 min |
-| 2 | Deploy East | 10 min |
+| 2 | Render & Deploy East | 10 min |
 | 3 | Deploy West | 3 min |
 | 4 | Deploy Prod | 5 min |
 | 5 | Revision Rollout | 5-7 min |
@@ -714,5 +823,6 @@ cub unit history --space messagewall-dev-east messagewall-dev-east
 
 - [Claim Authoring Guide](claim-authoring.md) - Kustomize overlay details
 - [Demo Guide](demo-guide.md) - Reference material, Q&A, deeper dives
+- [ADR-014](decisions/014-confighub-stores-expanded-resources.md) - Why expanded resources
 - [Bulk Changes](bulk-changes-and-change-management.md) - Risk mitigation strategies
 - [ConfigHub + Crossplane Narrative](confighub-crossplane-narrative.md) - Architecture deep-dive

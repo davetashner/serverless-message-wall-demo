@@ -1,35 +1,47 @@
 name: Publish to ConfigHub
 
-# Updated per ADR-011: Bidirectional GitOps with ConfigHub as Authority
+# Composition Render Pipeline (ADR-014)
 #
-# Phase 2: Git → ConfigHub as proposal
-# CI doesn't blindly overwrite ConfigHub. Instead:
-# 1. Check if ConfigHub has changes not in Git (conflict detection)
-# 2. If conflict: fail and require resolution
-# 3. If no conflict: publish as normal
+# Renders Claims through the Crossplane Composition at build time,
+# producing fully-expanded managed resources for ConfigHub.
+# Crossplane in-cluster acts as a pure reconciler.
+#
+# Conflict detection per ADR-011: Git → ConfigHub as proposal.
 
 on:
   push:
     branches: [main]
     paths:
-      - 'infra/base/**'
-      - 'config/**'
+      - 'infra/claims/**'
+      - 'platform/crossplane/compositions/**'
+      - 'platform/crossplane/xrd/**'
+      - 'platform/crossplane/functions/**'
+      - 'scripts/render-composition.sh'
+      - 'scripts/validate-policies.sh'
       - '.github/workflows/confighub-publish.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'infra/base/**'
-      - 'config/**'
+      - 'infra/claims/**'
+      - 'platform/crossplane/compositions/**'
+      - 'platform/crossplane/xrd/**'
+      - 'platform/crossplane/functions/**'
+      - 'scripts/render-composition.sh'
+      - 'scripts/validate-policies.sh'
       - '.github/workflows/confighub-publish.yml'
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to publish'
+      overlay:
+        description: 'Overlay to publish'
         required: true
-        default: 'dev'
+        default: 'dev-east'
         type: choice
         options:
-          - dev
+          - dev-east
+          - dev-west
+          - prod-east
+          - prod-west
+          - all
       force:
         description: 'Force publish (skip conflict detection)'
         required: false
@@ -41,68 +53,74 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
 
+    strategy:
+      matrix:
+        # On PR: render dev-east only for fast feedback
+        # On push to main or dispatch: render requested overlays
+        overlay: ${{ github.event_name == 'pull_request' && fromJson('["dev-east"]') || github.event.inputs.overlay == 'all' && fromJson('["dev-east","dev-west","prod-east","prod-west"]') || fromJson(format('["{0}"]', github.event.inputs.overlay || 'dev-east')) }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Need full history for conflict detection
+          fetch-depth: 0
 
-      - name: Install cub CLI
+      - name: Install tools
         run: |
+          # Install Crossplane CLI
+          curl -sL "https://raw.githubusercontent.com/crossplane/crossplane/master/install.sh" | sh
+          sudo mv crossplane /usr/local/bin/
+
+          # Install yq
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+          # Install kustomize
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+          # Install cub CLI
           curl -fsSL https://hub.confighub.com/cub/install.sh | bash
           echo "$HOME/.confighub/bin" >> $GITHUB_PATH
 
-      - name: Load environment config
-        id: config
+      - name: Render composition
+        id: render
         run: |
-          ENV_FILE="config/${{ github.event.inputs.environment || 'dev' }}.env"
-          if [[ ! -f "$ENV_FILE" ]]; then
-            echo "Error: Config file not found: $ENV_FILE"
-            exit 1
-          fi
-          # Export all variables from the env file
-          set -a
-          source "$ENV_FILE"
-          set +a
-          # Make them available to subsequent steps
-          echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> $GITHUB_OUTPUT
-          echo "AWS_REGION=$AWS_REGION" >> $GITHUB_OUTPUT
-          echo "RESOURCE_PREFIX=$RESOURCE_PREFIX" >> $GITHUB_OUTPUT
-          echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_OUTPUT
-          echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_OUTPUT
-          echo "CONFIGHUB_SPACE=$CONFIGHUB_SPACE" >> $GITHUB_OUTPUT
+          OVERLAY="${{ matrix.overlay }}"
+          OUTPUT_DIR="rendered/${OVERLAY}"
 
-      - name: Render Crossplane templates
-        run: |
-          mkdir -p rendered
-          export AWS_ACCOUNT_ID="${{ steps.config.outputs.AWS_ACCOUNT_ID }}"
-          export AWS_REGION="${{ steps.config.outputs.AWS_REGION }}"
-          export RESOURCE_PREFIX="${{ steps.config.outputs.RESOURCE_PREFIX }}"
-          export ENVIRONMENT="${{ steps.config.outputs.ENVIRONMENT }}"
-          export BUCKET_NAME="${{ steps.config.outputs.BUCKET_NAME }}"
+          echo "Rendering overlay: ${OVERLAY}"
+          ./scripts/render-composition.sh --overlay "${OVERLAY}" --output-dir "${OUTPUT_DIR}"
 
-          for template in infra/base/*.yaml.template; do
-            outfile="rendered/$(basename "${template%.template}")"
-            envsubst '${AWS_ACCOUNT_ID} ${AWS_REGION} ${RESOURCE_PREFIX} ${ENVIRONMENT} ${BUCKET_NAME}' < "$template" > "$outfile"
-            echo "Rendered: $outfile"
+          # Get ConfigHub space name
+          SPACE=$(./scripts/render-composition.sh --get-space "${OVERLAY}")
+          echo "space=${SPACE}" >> $GITHUB_OUTPUT
+          echo "output_dir=${OUTPUT_DIR}" >> $GITHUB_OUTPUT
+
+          # List rendered files for summary
+          echo "## Rendered Resources (${OVERLAY})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Kind |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          for f in "${OUTPUT_DIR}"/*.yaml; do
+            fname=$(basename "$f")
+            kind=$(yq eval '.kind' "$f")
+            echo "| ${fname} | ${kind} |" >> $GITHUB_STEP_SUMMARY
           done
-
-      - name: Install validation tools
-        run: |
-          # Install yq for YAML parsing
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+          echo "" >> $GITHUB_STEP_SUMMARY
 
       - name: Validate policies
         id: validate
         run: |
-          echo "## Policy Validation" >> $GITHUB_STEP_SUMMARY
+          OUTPUT_DIR="${{ steps.render.outputs.output_dir }}"
+
+          echo "## Policy Validation (${{ matrix.overlay }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if ./scripts/validate-policies.sh rendered 2>&1 | tee validation-output.txt; then
-            echo "✅ All policy checks passed" >> $GITHUB_STEP_SUMMARY
+          if ./scripts/validate-policies.sh "${OUTPUT_DIR}" 2>&1 | tee validation-output.txt; then
+            echo "All policy checks passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Policy violations found:" >> $GITHUB_STEP_SUMMARY
+            echo "Policy violations found:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             cat validation-output.txt >> $GITHUB_STEP_SUMMARY
@@ -111,6 +129,7 @@ jobs:
           fi
 
       - name: Authenticate to ConfigHub
+        if: github.event_name != 'pull_request' || github.event_name == 'pull_request'
         run: cub auth login --as-worker
         env:
           CONFIGHUB_WORKER_ID: ${{ secrets.CONFIGHUB_WORKER_ID }}
@@ -119,12 +138,12 @@ jobs:
       - name: Export current ConfigHub state
         id: export
         run: |
-          SPACE="${{ steps.config.outputs.CONFIGHUB_SPACE }}"
+          SPACE="${{ steps.render.outputs.space }}"
+          OUTPUT_DIR="${{ steps.render.outputs.output_dir }}"
           mkdir -p confighub-current
 
           echo "Exporting current state from ConfigHub space: $SPACE"
 
-          # Get list of units
           UNITS=$(cub unit list --space "$SPACE" --format json 2>/dev/null | jq -r '.[].name' 2>/dev/null || echo "")
 
           if [[ -z "$UNITS" ]]; then
@@ -135,163 +154,127 @@ jobs:
             for unit in $UNITS; do
               echo "  Exporting: $unit"
               cub unit export --space "$SPACE" "$unit" > "confighub-current/${unit}.yaml" 2>/dev/null || true
-
-              # Get the last change description to detect source
-              LAST_CHANGE=$(cub unit get --space "$SPACE" "$unit" --format json 2>/dev/null | jq -r '.lastChangeDesc // ""' || echo "")
-              echo "  Last change: $LAST_CHANGE"
             done
           fi
 
-      - name: Detect conflicts (Phase 2 of ADR-011)
+      - name: Detect conflicts (ADR-011)
         id: conflict
         if: steps.export.outputs.first_deployment != 'true'
         run: |
-          echo "## Conflict Detection" >> $GITHUB_STEP_SUMMARY
+          SPACE="${{ steps.render.outputs.space }}"
+          OUTPUT_DIR="${{ steps.render.outputs.output_dir }}"
+
+          echo "## Conflict Detection (${{ matrix.overlay }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          CONFLICTS=""
           HAS_CONFLICT=false
 
           for ch_file in confighub-current/*.yaml; do
             [[ -f "$ch_file" ]] || continue
             unit=$(basename "$ch_file" .yaml)
-            git_file="rendered/${unit}.yaml"
+
+            # Check if this unit maps to a rendered resource
+            git_file="${OUTPUT_DIR}/${unit}.yaml"
 
             if [[ ! -f "$git_file" ]]; then
-              # Unit exists in ConfigHub but not in Git - this is a conflict
-              echo "⚠️ **CONFLICT**: Unit \`$unit\` exists in ConfigHub but not in Git templates" >> $GITHUB_STEP_SUMMARY
-              CONFLICTS+="- $unit: exists in ConfigHub but not in Git\n"
+              echo "**CONFLICT**: Unit \`$unit\` exists in ConfigHub but not in rendered output" >> $GITHUB_STEP_SUMMARY
               HAS_CONFLICT=true
               continue
             fi
 
-            # Compare YAML content (normalize for comparison)
             CH_CONTENT=$(yq eval -P "$ch_file" 2>/dev/null || cat "$ch_file")
             GIT_CONTENT=$(yq eval -P "$git_file" 2>/dev/null || cat "$git_file")
 
             if [[ "$CH_CONTENT" != "$GIT_CONTENT" ]]; then
-              # Check if ConfigHub was modified outside of CI
-              # Look for change descriptions that don't start with "CI:"
-              LAST_CHANGE=$(cub unit get --space "${{ steps.config.outputs.CONFIGHUB_SPACE }}" "$unit" --format json 2>/dev/null | jq -r '.lastChangeDesc // ""' || echo "")
+              LAST_CHANGE=$(cub unit get --space "$SPACE" "$unit" --format json 2>/dev/null | jq -r '.lastChangeDesc // ""' || echo "")
 
               if [[ "$LAST_CHANGE" != CI:* ]]; then
-                # ConfigHub was modified by something other than CI
-                echo "⚠️ **CONFLICT**: Unit \`$unit\` was modified in ConfigHub (not by CI)" >> $GITHUB_STEP_SUMMARY
-                echo "  Last change: \`$LAST_CHANGE\`" >> $GITHUB_STEP_SUMMARY
-                CONFLICTS+="- $unit: modified in ConfigHub (last change: $LAST_CHANGE)\n"
+                echo "**CONFLICT**: Unit \`$unit\` was modified in ConfigHub (not by CI)" >> $GITHUB_STEP_SUMMARY
                 HAS_CONFLICT=true
-
-                # Show diff
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "Diff (ConfigHub vs Git):" >> $GITHUB_STEP_SUMMARY
-                echo '```diff' >> $GITHUB_STEP_SUMMARY
-                diff -u "$git_file" "$ch_file" | head -30 >> $GITHUB_STEP_SUMMARY || true
-                echo '```' >> $GITHUB_STEP_SUMMARY
               else
-                echo "✅ Unit \`$unit\`: differs but last change was from CI (expected divergence)" >> $GITHUB_STEP_SUMMARY
+                echo "Unit \`$unit\`: differs but last change was from CI" >> $GITHUB_STEP_SUMMARY
               fi
             else
-              echo "✅ Unit \`$unit\`: matches" >> $GITHUB_STEP_SUMMARY
+              echo "Unit \`$unit\`: matches" >> $GITHUB_STEP_SUMMARY
             fi
           done
 
           echo "has_conflict=$HAS_CONFLICT" >> $GITHUB_OUTPUT
-          echo "conflicts<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$CONFLICTS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Fail on conflict (unless forced)
         if: steps.conflict.outputs.has_conflict == 'true' && github.event.inputs.force != 'true' && github.ref == 'refs/heads/main'
         run: |
+          echo "## Publish Blocked: Conflicts Detected" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## ❌ Publish Blocked: Conflicts Detected" >> $GITHUB_STEP_SUMMARY
+          echo "ConfigHub has changes not in Git. Per ADR-011, CI cannot silently overwrite." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ConfigHub has changes that are not in Git. Per ADR-011, CI cannot silently overwrite ConfigHub changes." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Resolution Options:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "1. **Accept ConfigHub changes**: Run the 'Sync ConfigHub to Git' workflow to import ConfigHub state to Git, then re-run this workflow." >> $GITHUB_STEP_SUMMARY
-          echo "2. **Revert ConfigHub changes**: Use ConfigHub to roll back to a previous revision, then re-run this workflow." >> $GITHUB_STEP_SUMMARY
-          echo "3. **Force publish (use with caution)**: Re-run with \`force: true\` to overwrite ConfigHub. This will lose the ConfigHub-side changes." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Conflicts:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.conflict.outputs.conflicts }}" >> $GITHUB_STEP_SUMMARY
-
+          echo "### Resolution:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Import ConfigHub state to Git" >> $GITHUB_STEP_SUMMARY
+          echo "2. Roll back ConfigHub to a previous revision" >> $GITHUB_STEP_SUMMARY
+          echo "3. Force publish (re-run with force: true)" >> $GITHUB_STEP_SUMMARY
           exit 1
 
       - name: Preview changes (PR only)
         if: github.event_name == 'pull_request'
         run: |
-          SPACE="${{ steps.config.outputs.CONFIGHUB_SPACE }}"
-          echo "## ConfigHub Preview" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The following units would be updated in space \`$SPACE\`:" >> $GITHUB_STEP_SUMMARY
+          SPACE="${{ steps.render.outputs.space }}"
+          OUTPUT_DIR="${{ steps.render.outputs.output_dir }}"
+
+          echo "## ConfigHub Preview (${{ matrix.overlay }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          for yaml in rendered/*.yaml; do
+          for yaml in "${OUTPUT_DIR}"/*.yaml; do
             unit=$(basename "$yaml" .yaml)
             echo "### Unit: $unit" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            # Try dry-run update to see what would change
             if output=$(cub unit update --space "$SPACE" "$unit" "$yaml" --dry-run --verbose 2>&1); then
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
               echo "$output" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
             else
-              echo "⚠️ Error previewing changes:" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "$output" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "Error previewing: $output" >> $GITHUB_STEP_SUMMARY
             fi
             echo "" >> $GITHUB_STEP_SUMMARY
           done
 
-      - name: Publish to ConfigHub (main only, no conflicts)
+      - name: Publish to ConfigHub (main only)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (steps.conflict.outputs.has_conflict != 'true' || github.event.inputs.force == 'true')
         run: |
-          SPACE="${{ steps.config.outputs.CONFIGHUB_SPACE }}"
+          SPACE="${{ steps.render.outputs.space }}"
+          OUTPUT_DIR="${{ steps.render.outputs.output_dir }}"
           COMMIT_SHA="${{ github.sha }}"
           COMMIT_MSG=$(git log -1 --pretty=%B | head -1)
 
-          echo "## ConfigHub Publish Results" >> $GITHUB_STEP_SUMMARY
+          echo "## ConfigHub Publish (${{ matrix.overlay }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
-            echo "⚠️ **Force publish enabled** - Overwriting ConfigHub state" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-
           echo "Publishing to space \`$SPACE\` from commit \`${COMMIT_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          for yaml in rendered/*.yaml; do
+          for yaml in "${OUTPUT_DIR}"/*.yaml; do
             unit=$(basename "$yaml" .yaml)
             echo "Updating unit: $unit"
 
-            # Include Git commit info in change description for traceability
             CHANGE_DESC="CI: $COMMIT_MSG (${COMMIT_SHA:0:7})"
             if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
               CHANGE_DESC="CI (forced): $COMMIT_MSG (${COMMIT_SHA:0:7})"
             fi
 
+            # Create unit if it doesn't exist
+            cub unit create --space "$SPACE" "$unit" --allow-exists 2>/dev/null || true
+
             if cub unit update --space "$SPACE" "$unit" "$yaml" \
                 --change-desc "$CHANGE_DESC" \
                 --wait; then
-              echo "✅ **$unit**: Updated successfully" >> $GITHUB_STEP_SUMMARY
+              echo "**$unit**: Updated" >> $GITHUB_STEP_SUMMARY
             else
-              echo "❌ **$unit**: Failed to update" >> $GITHUB_STEP_SUMMARY
+              echo "**$unit**: FAILED" >> $GITHUB_STEP_SUMMARY
               exit 1
             fi
           done
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All units published successfully." >> $GITHUB_STEP_SUMMARY
-
-          # Record the Git commit associated with this ConfigHub state
-          # This helps with future conflict detection
+          echo "All units published." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tracking info:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Git commit: \`${COMMIT_SHA}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Workflow run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "**Git commit**: \`${COMMIT_SHA}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow run**: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

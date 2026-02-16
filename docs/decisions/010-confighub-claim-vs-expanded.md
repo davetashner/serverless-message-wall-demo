@@ -1,7 +1,7 @@
 # ADR-010: ConfigHub Stores Claims, Not Expanded Resources
 
 ## Status
-Accepted
+Superseded by [ADR-014](014-confighub-stores-expanded-resources.md)
 
 ## Context
 
