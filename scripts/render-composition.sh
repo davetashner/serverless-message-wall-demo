@@ -238,9 +238,9 @@ mkdir -p "${OUTPUT_DIR}"
 TOTAL_DOCS=$(echo "${RENDER_OUTPUT}" | yq eval-all --no-doc '[documentIndex] | length' - 2>/dev/null || echo "0")
 
 # Annotations to strip from ConfigHub output
+# NOTE: crossplane.io/external-name must be PRESERVED — it maps K8s resources to AWS names
 STRIP_ANNOTATIONS=(
     "crossplane.io/composition-resource-name"
-    "crossplane.io/external-name"
 )
 
 resource_count=0
@@ -268,8 +268,7 @@ for i in $(seq 1 $((TOTAL_DOCS - 1))); do
             del(.metadata.generateName) |
             del(.metadata.ownerReferences) |
             del(.metadata.uid) |
-            del(.metadata.annotations[\"crossplane.io/composition-resource-name\"]) |
-            del(.metadata.annotations[\"crossplane.io/external-name\"])
+            del(.metadata.annotations[\"crossplane.io/composition-resource-name\"])
         " - > "${OUTPUT_FILE}"
 
     # Clean up empty annotations/labels maps if all entries were stripped
