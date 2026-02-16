@@ -1,3 +1,4 @@
+# Demo: Initial deployment
 # Base ServerlessEventAppClaim template
 # Overlays patch: name, environment, region, resourcePrefix
 # Prod overlays also patch: lambdaMemory, lambdaTimeout, annotations
