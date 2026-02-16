@@ -208,6 +208,88 @@ RENDER_OUTPUT=$(crossplane render \
 }
 echo "  Render completed"
 
+# Extract claim variables for selector resolution
+RESOURCE_PREFIX=$(yq eval '.spec.resourcePrefix' "${TEMP_DIR}/xr.yaml")
+ENVIRONMENT=$(yq eval '.spec.environment' "${TEMP_DIR}/xr.yaml")
+AWS_ACCOUNT_ID=$(yq eval '.spec.awsAccountId' "${TEMP_DIR}/xr.yaml")
+
+# Compute resolved reference values
+BUCKET_NAME="${RESOURCE_PREFIX}-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
+API_ROLE_NAME="${RESOURCE_PREFIX}-api-role"
+SNAPSHOT_ROLE_NAME="${RESOURCE_PREFIX}-snapshot-role"
+API_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${API_ROLE_NAME}"
+SNAPSHOT_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${SNAPSHOT_ROLE_NAME}"
+API_HANDLER_NAME="${RESOURCE_PREFIX}-api-handler"
+SNAPSHOT_WRITER_NAME="${RESOURCE_PREFIX}-snapshot-writer"
+RULE_NAME="${RESOURCE_PREFIX}-snapshot-trigger"
+
+# resolve_selectors - Replace *Selector fields with resolved direct references
+# Arguments: $1 = composition-resource-name, $2 = output file path
+resolve_selectors() {
+    local name="$1"
+    local file="$2"
+
+    case "${name}" in
+        # bucketSelector → bucket (5 resources)
+        bucket-ownership|bucket-public-access|bucket-website|bucket-cors|bucket-policy)
+            yq eval -i "
+                .spec.forProvider.bucket = \"${BUCKET_NAME}\" |
+                del(.spec.forProvider.bucketSelector)
+            " "${file}"
+            ;;
+
+        # roleSelector → role as ARN (Lambda Functions)
+        api-handler)
+            yq eval -i "
+                .spec.forProvider.role = \"${API_ROLE_ARN}\" |
+                del(.spec.forProvider.roleSelector)
+            " "${file}"
+            ;;
+        snapshot-writer)
+            yq eval -i "
+                .spec.forProvider.role = \"${SNAPSHOT_ROLE_ARN}\" |
+                del(.spec.forProvider.roleSelector)
+            " "${file}"
+            ;;
+
+        # roleSelector → role as name (RolePolicies)
+        api-role-policy)
+            yq eval -i "
+                .spec.forProvider.role = \"${API_ROLE_NAME}\" |
+                del(.spec.forProvider.roleSelector)
+            " "${file}"
+            ;;
+        snapshot-role-policy)
+            yq eval -i "
+                .spec.forProvider.role = \"${SNAPSHOT_ROLE_NAME}\" |
+                del(.spec.forProvider.roleSelector)
+            " "${file}"
+            ;;
+
+        # functionNameSelector → functionName (4 resources)
+        function-url|function-url-permission|function-url-invoke-permission)
+            yq eval -i "
+                .spec.forProvider.functionName = \"${API_HANDLER_NAME}\" |
+                del(.spec.forProvider.functionNameSelector)
+            " "${file}"
+            ;;
+        eventbridge-permission)
+            yq eval -i "
+                .spec.forProvider.functionName = \"${SNAPSHOT_WRITER_NAME}\" |
+                del(.spec.forProvider.functionNameSelector)
+            " "${file}"
+            ;;
+
+        # ruleSelector → rule (1 resource)
+        eventbridge-target)
+            yq eval -i "
+                .spec.forProvider.rule = \"${RULE_NAME}\" |
+                del(.spec.forProvider.ruleSelector)
+            " "${file}"
+            ;;
+    esac
+}
+
 # Step 4: Split output into individual files
 echo "Step 4: Splitting into individual resource files..."
 
@@ -275,6 +357,9 @@ for i in $(seq 1 $((TOTAL_DOCS - 1))); do
     if [[ $(yq eval '.metadata.annotations | length' "${OUTPUT_FILE}") == "0" ]]; then
         yq eval -i 'del(.metadata.annotations)' "${OUTPUT_FILE}"
     fi
+
+    # Step 4b: Resolve cross-resource selectors to direct references
+    resolve_selectors "${RESOURCE_NAME}" "${OUTPUT_FILE}"
 
     echo "  ${RESOURCE_NAME}.yaml (${RESOURCE_KIND})"
     resource_count=$((resource_count + 1))
