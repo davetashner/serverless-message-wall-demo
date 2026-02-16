@@ -258,14 +258,21 @@ for i in $(seq 1 $((TOTAL_DOCS - 1))); do
     RESOURCE_KIND=$(echo "${RENDER_OUTPUT}" | yq eval-all "select(documentIndex == ${i}) | .kind" -)
     OUTPUT_FILE="${OUTPUT_DIR}/${RESOURCE_NAME}.yaml"
 
-    # Extract the document and clean up Crossplane-internal annotations
+    # Extract the document and clean up Crossplane runtime artifacts:
+    # - Set metadata.name from composition-resource-name (crossplane uses generateName)
+    # - Remove generateName, ownerReferences, uid (runtime-only fields)
+    # - Strip Crossplane-internal annotations
     echo "${RENDER_OUTPUT}" | yq eval-all "select(documentIndex == ${i})" - | \
-        yq eval '
-            del(.metadata.annotations["crossplane.io/composition-resource-name"]) |
-            del(.metadata.annotations["crossplane.io/external-name"])
-        ' - > "${OUTPUT_FILE}"
+        yq eval "
+            .metadata.name = \"${RESOURCE_NAME}\" |
+            del(.metadata.generateName) |
+            del(.metadata.ownerReferences) |
+            del(.metadata.uid) |
+            del(.metadata.annotations[\"crossplane.io/composition-resource-name\"]) |
+            del(.metadata.annotations[\"crossplane.io/external-name\"])
+        " - > "${OUTPUT_FILE}"
 
-    # Clean up empty annotations map if all annotations were stripped
+    # Clean up empty annotations/labels maps if all entries were stripped
     if [[ $(yq eval '.metadata.annotations | length' "${OUTPUT_FILE}") == "0" ]]; then
         yq eval -i 'del(.metadata.annotations)' "${OUTPUT_FILE}"
     fi
