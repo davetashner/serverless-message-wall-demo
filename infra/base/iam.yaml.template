@@ -69,7 +69,10 @@ spec:
               "logs:CreateLogStream",
               "logs:PutLogEvents"
             ],
-            "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*:*"
+            "Resource": [
+              "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*",
+              "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*:*"
+            ]
           }
         ]
       }
@@ -141,7 +144,10 @@ spec:
               "logs:CreateLogStream",
               "logs:PutLogEvents"
             ],
-            "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*:*"
+            "Resource": [
+              "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*",
+              "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${RESOURCE_PREFIX}-*:*"
+            ]
           }
         ]
       }

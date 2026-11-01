@@ -346,6 +346,9 @@ spec:
                     - fromFieldPath: spec.region
                     - fromFieldPath: spec.awsAccountId
                     - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
+                    - fromFieldPath: spec.resourcePrefix
                   strategy: string
                   string:
                     fmt: |
@@ -377,7 +380,10 @@ spec:
                               "logs:CreateLogStream",
                               "logs:PutLogEvents"
                             ],
-                            "Resource": "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*:*"
+                            "Resource": [
+                              "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*",
+                              "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*:*"
+                            ]
                           }
                         ]
                       }
@@ -403,6 +409,9 @@ spec:
                     - fromFieldPath: spec.region
                     - fromFieldPath: spec.awsAccountId
                     - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.resourcePrefix
+                    - fromFieldPath: spec.region
+                    - fromFieldPath: spec.awsAccountId
                     - fromFieldPath: spec.resourcePrefix
                     - fromFieldPath: spec.region
                     - fromFieldPath: spec.awsAccountId
@@ -438,7 +447,10 @@ spec:
                               "logs:CreateLogStream",
                               "logs:PutLogEvents"
                             ],
-                            "Resource": "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*:*"
+                            "Resource": [
+                              "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*",
+                              "arn:aws:logs:%s:%s:log-group:/aws/lambda/%s-*:*"
+                            ]
                           }
                         ]
                       }
