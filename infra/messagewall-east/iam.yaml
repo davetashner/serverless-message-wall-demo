@@ -63,7 +63,10 @@ spec:
               "logs:CreateLogStream",
               "logs:PutLogEvents"
             ],
-            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*:*"
+            "Resource": [
+              "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*",
+              "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*:*"
+            ]
           }
         ]
       }
@@ -132,7 +135,10 @@ spec:
               "logs:CreateLogStream",
               "logs:PutLogEvents"
             ],
-            "Resource": "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*:*"
+            "Resource": [
+              "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*",
+              "arn:aws:logs:us-east-1:205074708100:log-group:/aws/lambda/messagewall-east-*:*"
+            ]
           }
         ]
       }
